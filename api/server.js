@@ -71,6 +71,62 @@ app.post('/api/test', (req, res) => {
   res.json({ success: true, reply: 'test endpoint works', provider: 'test' });
 });
 
+app.get('/api/debug', async (req, res) => {
+  const results = {};
+  try {
+    const pollStart = Date.now();
+    const pollResp = await axios.post('https://text.pollinations.ai/', {
+      messages: [{ role: 'user', content: 'hi' }], model: 'openai', temperature: 0.7
+    }, { timeout: 15000 });
+    results.pollinations = { reachable: true, status: pollResp.status, time: Date.now() - pollStart + 'ms' };
+  } catch (e) {
+    results.pollinations = { reachable: false, error: e.message, time: e.code || 'timeout/network' };
+  }
+  try {
+    const groqStart = Date.now();
+    const groqResp = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+      model: 'llama-3.1-70b-versatile',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 10, temperature: 0.7
+    }, {
+      headers: { 'Authorization': 'Bearer test-invalid-key' },
+      timeout: 15000
+    });
+    results.groq = { reachable: true, status: groqResp.status, time: Date.now() - groqStart + 'ms' };
+  } catch (e) {
+    results.groq = { reachable: false, error: e.message, code: e.code };
+  }
+  try {
+    const oiStart = Date.now();
+    const oiResp = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+      model: 'deepseek/deepseek-chat',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 10, temperature: 0.7
+    }, {
+      headers: { 'Authorization': 'Bearer test-invalid-key' },
+      timeout: 15000
+    });
+    results.openrouter = { reachable: true, status: oiResp.status, time: Date.now() - oiStart + 'ms' };
+  } catch (e) {
+    results.openrouter = { reachable: false, error: e.message, code: e.code };
+  }
+  try {
+    const omniStart = Date.now();
+    const omniResp = await axios.post('https://cloud.omniroute.online/v1/chat/completions', {
+      model: 'deepseek/deepseek-chat',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 10, temperature: 0.7
+    }, {
+      headers: { 'Authorization': 'Bearer test-invalid-key' },
+      timeout: 15000
+    });
+    results.omniroute = { reachable: true, status: omniResp.status, time: Date.now() - omniStart + 'ms' };
+  } catch (e) {
+    results.omniroute = { reachable: false, error: e.message, code: e.code };
+  }
+  res.json({ success: true, results, nodeEnv: process.env.NODE_ENV, timestamp: new Date().toISOString() });
+});
+
 // ============================================
 // AI PROVIDERS
 // ============================================
