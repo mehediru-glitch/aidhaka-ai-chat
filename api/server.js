@@ -380,8 +380,8 @@ app.post('/api/chat', async (req, res) => {
 
     // Save to DB and cache if user_id provided
     if (user_id && result.success) {
-      saveChatToDB(user_id, question, result.reply, usedProvider);
-      addToChatCache(user_id, question, result.reply);
+      saveChatToDB(user_id, question, result.reply, usedProvider).catch(() => {});
+      addToChatCache(user_id, question, result.reply).catch(() => {});
     }
 
     res.json({ success: true, reply: result.reply, provider: usedProvider });
