@@ -215,7 +215,7 @@ async function callGroq(question, apiKey) {
       {
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
           { role: 'user', content: question }
         ],
         max_tokens: 2000,
@@ -238,7 +238,16 @@ async function callGemini(question, apiKey) {
   try {
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
-      { contents: [{ parts: [{ text: question }] }] },
+      {
+        contents: [
+          {
+            parts: [
+              { text: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
+              { text: question }
+            ]
+          }
+        ]
+      },
       { timeout: 60000 }
     );
 
@@ -257,7 +266,7 @@ async function callDeepSeek(question, apiKey) {
       {
         model: 'deepseek-chat',
         messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
           { role: 'user', content: question }
         ],
         max_tokens: 2000,
@@ -283,7 +292,7 @@ async function callOmniRoute(question, apiKey) {
       {
         model: 'deepseek/deepseek-chat',
         messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
           { role: 'user', content: question }
         ],
         max_tokens: 2000,
