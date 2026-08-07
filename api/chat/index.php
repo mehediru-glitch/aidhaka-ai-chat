@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: ' . SITE_URL);
+header('Access-Control-Allow-Origin: ' . (SITE_URL ?? '*'));
 header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 

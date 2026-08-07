@@ -28,6 +28,7 @@ if (file_exists(KEYS_FILE)) {
 }
 
 define('OMNIROUTE_API_KEY', $apiKeys['omniroute'] ?? '');
+define('COHERE_API_KEY', $apiKeys['cohere'] ?? '');
 define('PAYMENT_API_KEY', $apiKeys['payment'] ?? '');
 define('BKASH_NUMBER', $apiKeys['bkash'] ?? '01552665356');
 

@@ -51,6 +51,7 @@ const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY || API_KEYS.omniroute ||
 const GROQ_API_KEY = process.env.GROQ_API_KEY || API_KEYS.groq || '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || API_KEYS.gemini || '';
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || API_KEYS.deepseek || '';
+const COHERE_API_KEY = process.env.COHERE_API_KEY || API_KEYS.cohere || '';
 const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || API_KEYS.payment || '';
 const BKASH_NUMBER = process.env.BKASH_NUMBER || API_KEYS.bkash || '01552665356';
 
@@ -81,7 +82,7 @@ app.get('/api/health', (req, res) => {
     success: true, 
     message: 'Aidhaka AI API is running', 
     timestamp: new Date().toISOString(),
-    providers: ['pollinations', 'groq', 'gemini', 'deepseek', 'omniroute']
+    providers: ['pollinations', 'groq', 'gemini', 'deepseek', 'cohere', 'omniroute']
   });
 });
 
@@ -109,6 +110,7 @@ function routeQuestion(question, apiKeys) {
       fallback: (q, keys) => [
         { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
         { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
+        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) },
         { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) }
       ]
     };
@@ -120,8 +122,9 @@ function routeQuestion(question, apiKeys) {
       call: (q, keys) => callGemini(q, keys.gemini),
       fallback: (q, keys) => [
         { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
-        { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) },
-        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) }
+        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
+        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) },
+        { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) }
       ]
     };
   }
@@ -132,7 +135,8 @@ function routeQuestion(question, apiKeys) {
       call: (q, keys) => callGemini(q, keys.gemini),
       fallback: (q, keys) => [
         { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
-        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) }
+        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
+        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) }
       ]
     };
   }
@@ -143,7 +147,8 @@ function routeQuestion(question, apiKeys) {
       call: (q, keys) => callPollinationsAI(q),
       fallback: (q, keys) => [
         { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
-        { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) }
+        { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
+        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) }
       ]
     };
   }
@@ -154,6 +159,7 @@ function routeQuestion(question, apiKeys) {
     fallback: (q, keys) => [
       { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
       { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
+      { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) },
       { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) },
       { provider: 'omniroute', call: (q2, k2) => apiKeys.omniroute ? callOmniRoute(q2, k2.omniroute) : Promise.resolve({ success: false }) }
     ]
@@ -311,6 +317,29 @@ async function callOmniRoute(question, apiKey) {
   }
 }
 
+async function callCohere(question, apiKey) {
+  try {
+    const response = await axios.post(
+      'https://api.cohere.ai/v1/chat',
+      {
+        model: 'command-r',
+        message: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.\n\nUser: ' + question,
+        max_tokens: 2000,
+        temperature: 0.7
+      },
+      {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000
+      }
+    );
+
+    const reply = response.data?.text || 'Sorry, I could not generate a response.';
+    return { success: true, reply, provider: 'cohere' };
+  } catch (err) {
+    return { success: false, error: err.message, provider: 'cohere' };
+  }
+}
+
 // ============================================
 // CHAT HISTORY HELPERS
 // ============================================
@@ -422,6 +451,10 @@ app.post('/api/chat', async (req, res) => {
       apiKeys.deepseek = process.env.DEEPSEEK_API_KEY;
       keysSource += ' env:DEEPSEEK_API_KEY';
     }
+    if (!apiKeys.cohere && process.env.COHERE_API_KEY) {
+      apiKeys.cohere = process.env.COHERE_API_KEY;
+      keysSource += ' env:COHERE_API_KEY';
+    }
     if (!apiKeys.payment && process.env.PAYMENT_API_KEY) {
       apiKeys.payment = process.env.PAYMENT_API_KEY;
       keysSource += ' env:PAYMENT_API_KEY';
@@ -445,6 +478,9 @@ app.post('/api/chat', async (req, res) => {
     } else if (provider === 'gemini' && apiKeys.gemini) {
       result = await callGemini(question, apiKeys.gemini);
       usedProvider = 'gemini';
+    } else if (provider === 'cohere' && apiKeys.cohere) {
+      result = await callCohere(question, apiKeys.cohere);
+      usedProvider = 'cohere';
     } else if (provider === 'deepseek' && apiKeys.deepseek) {
       result = await callDeepSeek(question, apiKeys.deepseek);
       usedProvider = 'deepseek';

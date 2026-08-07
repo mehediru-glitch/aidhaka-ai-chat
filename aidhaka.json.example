@@ -4,5 +4,6 @@
   "bkash": "01552665356",
   "groq": "your-groq-key",
   "gemini": "your-gemini-key",
-  "deepseek": "your-deepseek-key"
+  "deepseek": "your-deepseek-key",
+  "cohere": "your-cohere-key"
 }

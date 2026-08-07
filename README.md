@@ -1,13 +1,13 @@
 # Aidhaka AI Chatbot
 
-A complete, production-ready AI chatbot web application powered by DeepSeek. Built with PHP, Node.js Express, MySQL, and premium dark theme UI.
+A complete, production-ready AI chatbot web application powered by multiple AI providers with auto-fallback. Built with PHP, Node.js Express, MySQL, and premium dark theme UI.
 
 ## Features
 
 - **User Authentication**: Registration, login, session management
 - **15-Day Free Trial**: Automatic trial period with payment redirect
 - **Bilingual Support**: English and Bangla interface
-- **Unlimited AI Chat**: Multiple AI providers with auto-fallback (Pollinations, Groq, Gemini, DeepSeek, OmniRoute)
+- **Unlimited AI Chat**: Multiple AI providers with auto-fallback (Pollinations, Groq, Gemini, DeepSeek, Cohere, OmniRoute)
 - **Coding Assistant**: Full coding support with multiple AI models
 - **Payment Integration**: bKash payment verification via pay.aiammu.com API
 - **Responsive Design**: Mobile-first, works on all devices
@@ -96,7 +96,8 @@ No chat history stored in DB - chat is unlimited and stateless.
   "bkash": "01552665356",
   "groq": "your-groq-key",
   "gemini": "your-gemini-key",
-  "deepseek": "your-deepseek-key"
+  "deepseek": "your-deepseek-key",
+  "cohere": "your-cohere-key"
 }
 ```
 4. Set permissions: `chmod 600 /home/diamonds/aidhaka.json`
@@ -137,12 +138,13 @@ pm2 startup
 ## AI Providers (Auto Fallback)
 
 1. **Pollinations AI** - 100% FREE, no API key needed
-2. **Groq** - Free with API key
-3. **Google Gemini** - Free with API key
-4. **DeepSeek** - Limited free
-5. **OmniRoute** - Your paid provider (cloud)
+2. **Groq** - Free with API key (30 RPM)
+3. **Google Gemini** - Free with API key (1,500/day)
+4. **Cohere** - Free with API key (1,000/month)
+5. **DeepSeek** - Limited free
+6. **OmniRoute** - Your paid provider (cloud)
 
-System automatically tries each provider if the previous one fails.
+System automatically routes queries to the best provider and falls back if one fails.
 
 ## Payment Flow
 

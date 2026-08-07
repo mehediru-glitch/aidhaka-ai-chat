@@ -65,7 +65,7 @@ require_once __DIR__ . '/includes/functions.php';
                     <span class="gradient-text" data-i18n="hero_title_2">AI Companion</span>
                 </h1>
                 <p class="hero-subtitle" data-i18n="hero_subtitle">
-                    Experience the power of DeepSeek AI. Chat in English, Bangla, or Hindi and get instant, intelligent responses.
+                    Experience the power of multi-provider AI. Chat in English, Bangla, or Hindi and get instant, intelligent responses.
                 </p>
                 <div class="hero-cta">
                     <?php if (isLoggedIn()): ?>
@@ -106,9 +106,9 @@ require_once __DIR__ . '/includes/functions.php';
                     <p data-i18n="feat_1_desc">Chat seamlessly in English, Bangla, or Hindi. AI understands and responds naturally in your preferred language.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🧠</div>
-                    <h3 data-i18n="feat_2_title">DeepSeek Powered</h3>
-                    <p data-i18n="feat_2_desc">Powered by advanced DeepSeek model for accurate, contextual, and helpful responses every time.</p>
+                <div class="feature-icon">🧠</div>
+                <h3 data-i18n="feat_2_title">Multi-Provider AI</h3>
+                <p data-i18n="feat_2_desc">Powered by multiple AI providers (Pollinations, Groq, Gemini, Cohere, DeepSeek) with automatic fallback for reliable responses every time.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📝</div>
