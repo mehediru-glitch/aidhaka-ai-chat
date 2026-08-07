@@ -138,7 +138,7 @@ async function callGroq(question, apiKey) {
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
-        model: 'llama-3.1-70b-versatile',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
           { role: 'user', content: question }
@@ -162,7 +162,7 @@ async function callGroq(question, apiKey) {
 async function callGemini(question, apiKey) {
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
       { contents: [{ parts: [{ text: question }] }] },
       { timeout: 60000 }
     );
