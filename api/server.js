@@ -87,37 +87,53 @@ app.get('/api/health', (req, res) => {
 // ============================================
 
 async function callPollinationsAI(question) {
-  try {
-    const response = await axios.post(
-      'https://text.pollinations.ai/',
-      {
-        messages: [
-          { role: 'user', content: question }
-        ],
-        model: 'openai',
-        temperature: 0.7
-      },
-      { timeout: 60000 }
-    );
+  const models = ['openai', 'gpt', 'mistral', 'llama'];
+  const maxRetries = 2;
+  const baseDelay = 1000;
 
-    let reply = response.data?.choices?.[0]?.message?.content ||
-                response.data?.response ||
-                response.data?.output ||
-                response.data?.text ||
-                response.data;
+  for (const model of models) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await axios.post(
+          'https://text.pollinations.ai/',
+          {
+            messages: [
+              { role: 'user', content: question }
+            ],
+            model: model,
+            temperature: 0.7
+          },
+          { timeout: 45000 }
+        );
 
-    if (typeof reply === 'object') {
-      reply = JSON.stringify(reply);
+        let reply = response.data?.choices?.[0]?.message?.content ||
+                    response.data?.response ||
+                    response.data?.output ||
+                    response.data?.text ||
+                    response.data;
+
+        if (typeof reply === 'object') {
+          reply = JSON.stringify(reply);
+        }
+
+        if (!reply) {
+          reply = 'No response content from AI provider.';
+        }
+
+        return { success: true, reply, provider: 'pollinations' };
+      } catch (err) {
+        const status = err.response?.status;
+        if (status === 402 || status === 429) {
+          continue;
+        }
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, baseDelay * (attempt + 1)));
+        }
+      }
     }
-
-    if (!reply) {
-      reply = 'No response content from AI provider.';
-    }
-
-    return { success: true, reply, provider: 'pollinations' };
-  } catch (err) {
-    return { success: false, error: err.message, provider: 'pollinations' };
   }
+
+  return { success: false, error: 'Pollinations unavailable after retries', provider: 'pollinations' };
 }
 
 async function callGroq(question, apiKey) {
