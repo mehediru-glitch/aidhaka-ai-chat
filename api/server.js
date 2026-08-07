@@ -15,7 +15,23 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // Middleware
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(morgan('combined'));
+
+// Rate limiting with error boundary
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+});
+const safeLimiter = (req, res, next) => {
+  try { limiter(req, res, next); } catch (e) { next(); }
+};
+app.use('/api/', safeLimiter);
 
 // ============================================
 // LOAD CONFIGURATION
@@ -64,67 +80,6 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     providers: ['pollinations', 'groq', 'gemini', 'deepseek', 'omniroute']
   });
-});
-
-app.post('/api/test', (req, res) => {
-  console.log('TEST ENDPOINT HIT, body:', JSON.stringify(req.body));
-  res.json({ success: true, reply: 'test endpoint works', provider: 'test' });
-});
-
-app.get('/api/debug', async (req, res) => {
-  const results = {};
-  try {
-    const pollStart = Date.now();
-    const pollResp = await axios.post('https://text.pollinations.ai/', {
-      messages: [{ role: 'user', content: 'hi' }], model: 'openai', temperature: 0.7
-    }, { timeout: 15000 });
-    results.pollinations = { reachable: true, status: pollResp.status, time: Date.now() - pollStart + 'ms' };
-  } catch (e) {
-    results.pollinations = { reachable: false, error: e.message, time: e.code || 'timeout/network' };
-  }
-  try {
-    const groqStart = Date.now();
-    const groqResp = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama-3.1-70b-versatile',
-      messages: [{ role: 'user', content: 'hi' }],
-      max_tokens: 10, temperature: 0.7
-    }, {
-      headers: { 'Authorization': 'Bearer test-invalid-key' },
-      timeout: 15000
-    });
-    results.groq = { reachable: true, status: groqResp.status, time: Date.now() - groqStart + 'ms' };
-  } catch (e) {
-    results.groq = { reachable: false, error: e.message, code: e.code };
-  }
-  try {
-    const oiStart = Date.now();
-    const oiResp = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: 'deepseek/deepseek-chat',
-      messages: [{ role: 'user', content: 'hi' }],
-      max_tokens: 10, temperature: 0.7
-    }, {
-      headers: { 'Authorization': 'Bearer test-invalid-key' },
-      timeout: 15000
-    });
-    results.openrouter = { reachable: true, status: oiResp.status, time: Date.now() - oiStart + 'ms' };
-  } catch (e) {
-    results.openrouter = { reachable: false, error: e.message, code: e.code };
-  }
-  try {
-    const omniStart = Date.now();
-    const omniResp = await axios.post('https://cloud.omniroute.online/v1/chat/completions', {
-      model: 'deepseek/deepseek-chat',
-      messages: [{ role: 'user', content: 'hi' }],
-      max_tokens: 10, temperature: 0.7
-    }, {
-      headers: { 'Authorization': 'Bearer test-invalid-key' },
-      timeout: 15000
-    });
-    results.omniroute = { reachable: true, status: omniResp.status, time: Date.now() - omniStart + 'ms' };
-  } catch (e) {
-    results.omniroute = { reachable: false, error: e.message, code: e.code };
-  }
-  res.json({ success: true, results, nodeEnv: process.env.NODE_ENV, timestamp: new Date().toISOString() });
 });
 
 // ============================================
@@ -335,17 +290,13 @@ async function addToChatCache(userId, question, answer) {
 // CHAT ENDPOINT - Auto fallback + DB save
 // ============================================
 app.post('/api/chat', async (req, res) => {
-  console.log('Chat hit, body:', JSON.stringify(req.body));
   try {
     const { question, provider, user_id } = req.body;
-    console.log('Step 1: body parsed OK');
 
     if (!question || !question.trim()) {
       return res.status(400).json({ success: false, error: 'Message cannot be empty' });
     }
-    console.log('Step 2: question validated');
 
-    // Load API keys from file or environment variables
     let apiKeys = {};
     let keysSource = 'none';
     try {
@@ -353,14 +304,11 @@ app.post('/api/chat', async (req, res) => {
       if (fs.existsSync(keysFile)) {
         apiKeys = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
         keysSource = 'file:' + keysFile;
-      } else {
-        console.log('Keys file not found:', keysFile);
       }
     } catch (err) {
       console.error('Error loading keys file:', err.message);
     }
 
-    // Fallback to environment variables if file not found
     if (!apiKeys.omniroute && process.env.OMNIROUTE_API_KEY) {
       apiKeys.omniroute = process.env.OMNIROUTE_API_KEY;
       keysSource += ' env:OMNIROUTE_API_KEY';
@@ -373,108 +321,54 @@ app.post('/api/chat', async (req, res) => {
       apiKeys.bkash = process.env.BKASH_NUMBER;
       keysSource += ' env:BKASH_NUMBER';
     }
-    
-    console.log('API Keys loaded from:', keysSource);
-    console.log('OmniRoute key present:', !!apiKeys.omniroute);
-    console.log('Payment key present:', !!apiKeys.payment);
-    console.log('BKASH number present:', !!apiKeys.bkash);
-    console.log('Step 3: keys loaded');
+
+    console.log('API Keys source:', keysSource);
 
     let result = null;
     let usedProvider = '';
 
-    // If user specified provider
     if (provider === 'pollinations') {
-      console.log('Step 4: calling pollinations');
-      try {
-        result = await callPollinationsAI(question);
-        usedProvider = 'pollinations';
-        console.log('Step 5: pollinations done, success:', result.success);
-      } catch (pErr) {
-        console.error('Pollinations threw:', pErr.message, pErr.stack);
-        result = { success: false, error: pErr.message };
-      }
+      result = await callPollinationsAI(question);
+      usedProvider = 'pollinations';
     } else if (provider === 'groq' && apiKeys.groq) {
-      try {
-        result = await callGroq(question, apiKeys.groq);
-        usedProvider = 'groq';
-      } catch (pErr) {
-        console.error('Groq threw:', pErr.message);
-        result = { success: false, error: pErr.message };
-      }
+      result = await callGroq(question, apiKeys.groq);
+      usedProvider = 'groq';
     } else if (provider === 'gemini' && apiKeys.gemini) {
-      try {
-        result = await callGemini(question, apiKeys.gemini);
-        usedProvider = 'gemini';
-      } catch (pErr) {
-        console.error('Gemini threw:', pErr.message);
-        result = { success: false, error: pErr.message };
-      }
+      result = await callGemini(question, apiKeys.gemini);
+      usedProvider = 'gemini';
     } else if (provider === 'deepseek' && apiKeys.omniroute) {
-      try {
-        result = await callDeepSeek(question, apiKeys.omniroute);
-        usedProvider = 'deepseek';
-      } catch (pErr) {
-        console.error('DeepSeek threw:', pErr.message);
-        result = { success: false, error: pErr.message };
-      }
+      result = await callDeepSeek(question, apiKeys.omniroute);
+      usedProvider = 'deepseek';
     } else if (provider === 'omniroute' && apiKeys.omniroute) {
-      try {
-        result = await callOmniRoute(question, apiKeys.omniroute);
-        usedProvider = 'omniroute';
-      } catch (pErr) {
-        console.error('OmniRoute threw:', pErr.message);
-        result = { success: false, error: pErr.message };
-      }
+      result = await callOmniRoute(question, apiKeys.omniroute);
+      usedProvider = 'omniroute';
     } else {
-      // AUTO MODE: Try free providers in order
-      try {
-        result = await callPollinationsAI(question);
-        usedProvider = 'pollinations';
-        console.log('Auto pollinations result:', result.success, result.error || 'ok');
-      } catch (pErr) {
-        console.error('Auto pollinations threw:', pErr.message, pErr.stack);
-        result = { success: false, error: pErr.message };
-      }
+      result = await callPollinationsAI(question);
+      usedProvider = 'pollinations';
+      console.log('Pollinations result:', result.success, result.error || 'ok');
 
       if (!result.success && apiKeys.groq) {
-        try {
-          result = await callGroq(question, apiKeys.groq);
-          usedProvider = 'groq';
-          console.log('Auto groq result:', result.success, result.error || 'ok');
-        } catch (pErr) {
-          console.error('Auto groq threw:', pErr.message);
-        }
+        result = await callGroq(question, apiKeys.groq);
+        usedProvider = 'groq';
+        console.log('Groq result:', result.success, result.error || 'ok');
       }
 
       if (!result.success && apiKeys.gemini) {
-        try {
-          result = await callGemini(question, apiKeys.gemini);
-          usedProvider = 'gemini';
-          console.log('Auto gemini result:', result.success, result.error || 'ok');
-        } catch (pErr) {
-          console.error('Auto gemini threw:', pErr.message);
-        }
+        result = await callGemini(question, apiKeys.gemini);
+        usedProvider = 'gemini';
+        console.log('Gemini result:', result.success, result.error || 'ok');
       }
 
       if (!result.success && apiKeys.omniroute) {
-        try {
-          result = await callDeepSeek(question, apiKeys.omniroute);
-          usedProvider = 'deepseek';
-          console.log('Auto deepseek result:', result.success, result.error || 'ok');
-        } catch (pErr) {
-          console.error('Auto deepseek threw:', pErr.message);
-        }
+        result = await callDeepSeek(question, apiKeys.omniroute);
+        usedProvider = 'deepseek';
+        console.log('DeepSeek result:', result.success, result.error || 'ok');
       }
 
       if (!result.success && apiKeys.omniroute) {
-        try {
-          result = await callOmniRoute(question, apiKeys.omniroute);
-          usedProvider = 'omniroute';
-          console.log('Auto omniroute result:', result.success, result.error || 'ok');
-        } catch (pErr) {
-          console.error('Auto omniroute threw:', pErr.message);
-        }
+        result = await callOmniRoute(question, apiKeys.omniroute);
+        usedProvider = 'omniroute';
+        console.log('OmniRoute result:', result.success, result.error || 'ok');
       }
 
       if (!result.success) {
@@ -490,29 +384,25 @@ app.post('/api/chat', async (req, res) => {
         usedProvider = 'fallback';
       }
     }
-    console.log('Step 6: provider done, used:', usedProvider, 'success:', result.success);
 
-    // Save to DB and cache if user_id provided
     if (user_id && result.success) {
       try {
         await saveChatToDB(user_id, question, result.reply, usedProvider);
-        console.log('Step 7: DB saved');
       } catch (dbErr) {
         console.error('DB save error:', dbErr.message);
       }
       try {
         await addToChatCache(user_id, question, result.reply);
-        console.log('Step 8: cache saved');
       } catch (cacheErr) {
         console.error('Cache write error:', cacheErr.message);
       }
     }
 
-    console.log('Final response - provider:', usedProvider, 'success:', result.success);
+    console.log('Response - provider:', usedProvider);
     res.json({ success: true, reply: result.reply, provider: usedProvider });
 
   } catch (err) {
-    console.error('CHAT ENDPOINT ERROR:', err.message, err.stack);
+    console.error('Chat error:', err.message, err.stack);
     res.status(500).json({ success: false, error: err.message || 'Something went wrong. Please try again.' });
   }
 });
@@ -598,9 +488,8 @@ app.get('/api/chat/export', async (req, res) => {
 
 // Error handling
 app.use((err, req, res, next) => {
-  console.error('Express error handler:', err && err.message, err && err.stack);
-  const message = err && err.message ? err.message : 'Internal server error';
-  res.status(500).json({ success: false, message, error: err ? err.code || err.message : 'unknown' });
+  console.error(err.stack);
+  res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
 app.use((req, res) => {
