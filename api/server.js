@@ -14,7 +14,8 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
-// Bare minimum - no middleware at all
+// Middleware
+app.use(express.json({ limit: '10mb' }));
 
 // ============================================
 // LOAD CONFIGURATION
