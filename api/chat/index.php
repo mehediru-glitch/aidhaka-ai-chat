@@ -23,6 +23,23 @@ if (!$user_id) {
 try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
+    $pdo->exec("CREATE TABLE IF NOT EXISTS chat_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        provider VARCHAR(50) DEFAULT 'unknown',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_user_created (user_id, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    
+    try {
+        $pdo->exec("ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'unknown' AFTER answer");
+    } catch (PDOException $alterErr) {
+        error_log('Alter table note: ' . $alterErr->getMessage());
+    }
+    
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $pdo->prepare('SELECT question, answer, created_at FROM chat_history WHERE user_id = ? ORDER BY created_at ASC');
         $stmt->execute([$user_id]);
@@ -41,8 +58,18 @@ try {
             exit;
         }
         
-        $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer, provider) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$user_id, $question, $answer, $provider]);
+        try {
+            $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer, provider) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$user_id, $question, $answer, $provider]);
+        } catch (PDOException $insertErr) {
+            error_log('Insert with provider failed: ' . $insertErr->getMessage());
+            try {
+                $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer) VALUES (?, ?, ?)');
+                $stmt->execute([$user_id, $question, $answer]);
+            } catch (PDOException $insertErr2) {
+                throw new PDOException('Failed to save chat: ' . $insertErr2->getMessage());
+            }
+        }
         
         echo json_encode(['success' => true, 'message' => 'Chat saved']);
     } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
