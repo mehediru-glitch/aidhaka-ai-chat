@@ -91,9 +91,12 @@ No chat history stored in DB - chat is unlimited and stateless.
 3. Paste your keys:
 ```json
 {
-  "omniroute": "sk-6b1484bcab4f4f36-dcd5eb-fc89c16d",
-  "payment": "pay_c5e356f41d58f73701091ca33251a2e9f61c87b587f7cd5a",
-  "bkash": "01552665356"
+  "omniroute": "your-omniroute-key",
+  "payment": "your-payment-key",
+  "bkash": "01552665356",
+  "groq": "your-groq-key",
+  "gemini": "your-gemini-key",
+  "deepseek": "your-deepseek-key"
 }
 ```
 4. Set permissions: `chmod 600 /home/diamonds/aidhaka.json`
