@@ -286,7 +286,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message cannot be empty' });
     }
 
-    // Load API keys
+    // Load API keys from file or environment variables
     let apiKeys = {};
     try {
       const keysFile = process.env.KEYS_FILE || '/home/diamonds/aidhaka.json';
@@ -294,7 +294,18 @@ app.post('/api/chat', async (req, res) => {
         apiKeys = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
       }
     } catch (err) {
-      console.error('Error loading keys:', err.message);
+      console.error('Error loading keys file:', err.message);
+    }
+
+    // Fallback to environment variables if file not found
+    if (!apiKeys.omniroute && process.env.OMNIROUTE_API_KEY) {
+      apiKeys.omniroute = process.env.OMNIROUTE_API_KEY;
+    }
+    if (!apiKeys.payment && process.env.PAYMENT_API_KEY) {
+      apiKeys.payment = process.env.PAYMENT_API_KEY;
+    }
+    if (!apiKeys.bkash && process.env.BKASH_NUMBER) {
+      apiKeys.bkash = process.env.BKASH_NUMBER;
     }
 
     let result = null;

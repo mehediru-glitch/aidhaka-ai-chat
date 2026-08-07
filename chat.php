@@ -137,7 +137,7 @@ $userLanguage = $user['language'] ?? 'en';
     <script>
         const currentLanguage = '<?= $userLanguage; ?>';
         const currentUserId = <?= $user['id']; ?>;
-        const API_BASE_URL = '<?= rtrim(API_BASE_URL, '/'); ?>';
+        const API_BASE_URL = 'https://aidhaka-ai-chat.onrender.com';
     </script>
 </body>
 </html>

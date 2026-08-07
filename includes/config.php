@@ -35,9 +35,8 @@ define('BKASH_NUMBER', $apiKeys['bkash'] ?? '01552665356');
 define('PAYMENT_API_URL', 'https://pay.aiammu.com/api/verify.php');
 define('PAYMENT_AMOUNT', 2000);
 
-// API Base URL (for external deployments like Fly.io)
-// Keep as '/' for same-server, or set to 'https://your-app.fly.dev' for external API
-define('API_BASE_URL', '/');
+// API Base URL (for external deployment on Render.com)
+define('API_BASE_URL', 'https://aidhaka-ai-chat.onrender.com');
 
 // OmniRoute
 define('OMNIROUTE_ENDPOINT', 'https://cloud.omniroute.online/v1/chat/completions');
