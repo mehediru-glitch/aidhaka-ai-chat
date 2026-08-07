@@ -73,11 +73,16 @@ try {
         
         echo json_encode(['success' => true, 'message' => 'Chat saved']);
     } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
-        $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ?');
-        $stmt->execute([$user_id]);
-        $deletedRows = $stmt->rowCount();
-        error_log("DELETE history for user $user_id: rows=$deletedRows");
-        echo json_encode(['success' => true, 'message' => 'Chat history cleared', 'deleted_rows' => $deletedRows]);
+        try {
+            $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ?');
+            $stmt->execute([$user_id]);
+            $deletedRows = $stmt->rowCount();
+            error_log("DELETE history for user $user_id: rows=$deletedRows");
+            echo json_encode(['success' => true, 'message' => 'Chat history cleared', 'deleted_rows' => $deletedRows]);
+        } catch (PDOException $deleteErr) {
+            error_log('Delete failed: ' . $deleteErr->getMessage());
+            echo json_encode(['success' => false, 'error' => 'Failed to clear history: ' . $deleteErr->getMessage()]);
+        }
     } else {
         http_response_code(405);
         echo json_encode(['success' => false, 'error' => 'Method not allowed']);
