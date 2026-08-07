@@ -71,6 +71,7 @@ $userLanguage = $user['language'] ?? 'en';
                 </div>
             </div>
             <div class="sidebar-actions">
+                <button class="btn btn-secondary btn-sm" onclick="downloadChat()" data-i18n="btn_download">Download</button>
                 <a href="/logout.php" class="btn btn-outline btn-sm" data-i18n="btn_logout">Logout</a>
             </div>
         </div>
@@ -128,7 +129,6 @@ $userLanguage = $user['language'] ?? 'en';
             </div>
             
             <div class="chat-actions">
-                <button class="action-btn" onclick="startNewChat()" data-i18n="chat_new">New Chat</button>
             </div>
         </div>
     </main>
