@@ -48,6 +48,9 @@ try {
 }
 
 const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY || API_KEYS.omniroute || '';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || API_KEYS.groq || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || API_KEYS.gemini || '';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || API_KEYS.deepseek || '';
 const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || API_KEYS.payment || '';
 const BKASH_NUMBER = process.env.BKASH_NUMBER || API_KEYS.bkash || '01552665356';
 
@@ -190,9 +193,9 @@ async function callGemini(question, apiKey) {
 async function callDeepSeek(question, apiKey) {
   try {
     const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
+      'https://api.deepseek.com/chat/completions',
       {
-        model: 'deepseek/deepseek-chat',
+        model: 'deepseek-chat',
         messages: [
           { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
           { role: 'user', content: question }
@@ -338,6 +341,18 @@ app.post('/api/chat', async (req, res) => {
       apiKeys.omniroute = process.env.OMNIROUTE_API_KEY;
       keysSource += ' env:OMNIROUTE_API_KEY';
     }
+    if (!apiKeys.groq && process.env.GROQ_API_KEY) {
+      apiKeys.groq = process.env.GROQ_API_KEY;
+      keysSource += ' env:GROQ_API_KEY';
+    }
+    if (!apiKeys.gemini && process.env.GEMINI_API_KEY) {
+      apiKeys.gemini = process.env.GEMINI_API_KEY;
+      keysSource += ' env:GEMINI_API_KEY';
+    }
+    if (!apiKeys.deepseek && process.env.DEEPSEEK_API_KEY) {
+      apiKeys.deepseek = process.env.DEEPSEEK_API_KEY;
+      keysSource += ' env:DEEPSEEK_API_KEY';
+    }
     if (!apiKeys.payment && process.env.PAYMENT_API_KEY) {
       apiKeys.payment = process.env.PAYMENT_API_KEY;
       keysSource += ' env:PAYMENT_API_KEY';
@@ -361,8 +376,8 @@ app.post('/api/chat', async (req, res) => {
     } else if (provider === 'gemini' && apiKeys.gemini) {
       result = await callGemini(question, apiKeys.gemini);
       usedProvider = 'gemini';
-    } else if (provider === 'deepseek' && apiKeys.omniroute) {
-      result = await callDeepSeek(question, apiKeys.omniroute);
+    } else if (provider === 'deepseek' && apiKeys.deepseek) {
+      result = await callDeepSeek(question, apiKeys.deepseek);
       usedProvider = 'deepseek';
     } else if (provider === 'omniroute' && apiKeys.omniroute) {
       result = await callOmniRoute(question, apiKeys.omniroute);
@@ -384,8 +399,8 @@ app.post('/api/chat', async (req, res) => {
         console.log('Gemini result:', result.success, result.error || 'ok');
       }
 
-      if (!result.success && apiKeys.omniroute) {
-        result = await callDeepSeek(question, apiKeys.omniroute);
+      if (!result.success && apiKeys.deepseek) {
+        result = await callDeepSeek(question, apiKeys.deepseek);
         usedProvider = 'deepseek';
         console.log('DeepSeek result:', result.success, result.error || 'ok');
       }
