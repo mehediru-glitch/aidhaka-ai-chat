@@ -283,9 +283,10 @@ async function addToChatCache(userId, question, answer) {
 // CHAT ENDPOINT - Auto fallback + DB save
 // ============================================
 app.post('/api/chat', async (req, res) => {
+  let result, usedProvider;
   try {
     const { question, provider, user_id } = req.body;
-    
+
     if (!question || !question.trim()) {
       return res.status(400).json({ success: false, error: 'Message cannot be empty' });
     }
@@ -323,9 +324,6 @@ app.post('/api/chat', async (req, res) => {
     console.log('OmniRoute key present:', !!apiKeys.omniroute);
     console.log('Payment key present:', !!apiKeys.payment);
     console.log('BKASH number present:', !!apiKeys.bkash);
-
-    let result = null;
-    let usedProvider = '';
 
     // If user specified provider
     if (provider === 'pollinations') {
@@ -406,7 +404,7 @@ app.post('/api/chat', async (req, res) => {
     res.json({ success: true, reply: result.reply, provider: usedProvider });
 
   } catch (err) {
-    console.error('Chat error:', err.message);
+    console.error('Chat error:', err.message, err.stack);
     res.status(500).json({ success: false, error: err.message || 'Something went wrong. Please try again.' });
   }
 });
