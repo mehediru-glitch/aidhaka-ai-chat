@@ -86,6 +86,81 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============================================
+// AI ROUTING
+// ============================================
+
+function routeQuestion(question, apiKeys) {
+  const q = question.toLowerCase();
+
+  const codingKeywords = ['code', 'function', 'bug', 'error', 'program', 'script', 'api', 'html', 'css', 'javascript', 'python', 'java', 'react', 'node', 'sql', 'database', 'debug', 'compile', 'syntax', 'class', 'method', 'algorithm', 'git', 'docker', 'server', 'client', 'frontend', 'backend'];
+  const longKeywords = ['explain', 'history', 'compare', 'difference', 'detailed', 'comprehensive', 'essay', 'research', 'analyze', 'analysis', 'report', 'describe', 'list all', 'every', 'complete'];
+  const creativeKeywords = ['story', 'poem', 'write', 'creative', 'imagine', 'fiction', 'song', 'joke', 'idea', 'brainstorm'];
+  const simpleKeywords = ['hi', 'hello', 'hey', 'thanks', 'thank you', 'bye', 'goodbye', 'ok', 'okay', 'yes', 'no'];
+
+  const isCoding = codingKeywords.some(k => q.includes(k));
+  const isLong = longKeywords.some(k => q.includes(k)) || question.length > 200;
+  const isCreative = creativeKeywords.some(k => q.includes(k));
+  const isSimple = simpleKeywords.some(k => q.includes(k)) || question.length < 20;
+
+  if (isCoding && apiKeys.groq) {
+    return {
+      provider: 'groq',
+      call: (q, keys) => callGroq(q, keys.groq),
+      fallback: (q, keys) => [
+        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
+        { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
+        { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) }
+      ]
+    };
+  }
+
+  if (isLong && apiKeys.gemini) {
+    return {
+      provider: 'gemini',
+      call: (q, keys) => callGemini(q, keys.gemini),
+      fallback: (q, keys) => [
+        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
+        { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) },
+        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) }
+      ]
+    };
+  }
+
+  if (isCreative && apiKeys.gemini) {
+    return {
+      provider: 'gemini',
+      call: (q, keys) => callGemini(q, keys.gemini),
+      fallback: (q, keys) => [
+        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
+        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) }
+      ]
+    };
+  }
+
+  if (isSimple) {
+    return {
+      provider: 'pollinations',
+      call: (q, keys) => callPollinationsAI(q),
+      fallback: (q, keys) => [
+        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
+        { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) }
+      ]
+    };
+  }
+
+  return {
+    provider: 'pollinations',
+    call: (q, keys) => callPollinationsAI(q),
+    fallback: (q, keys) => [
+      { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
+      { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
+      { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) },
+      { provider: 'omniroute', call: (q2, k2) => apiKeys.omniroute ? callOmniRoute(q2, k2.omniroute) : Promise.resolve({ success: false }) }
+    ]
+  };
+}
+
+// ============================================
 // AI PROVIDERS
 // ============================================
 
@@ -368,32 +443,18 @@ app.post('/api/chat', async (req, res) => {
       result = await callOmniRoute(question, apiKeys.omniroute);
       usedProvider = 'omniroute';
     } else {
-      result = await callPollinationsAI(question);
-      usedProvider = 'pollinations';
-      console.log('Pollinations result:', result.success, result.error || 'ok');
+      const route = routeQuestion(question, apiKeys);
+      usedProvider = route.provider;
+      result = await route.call(question, apiKeys);
+      console.log('Routed to', usedProvider, ':', result.success, result.error || 'ok');
 
-      if (!result.success && apiKeys.groq) {
-        result = await callGroq(question, apiKeys.groq);
-        usedProvider = 'groq';
-        console.log('Groq result:', result.success, result.error || 'ok');
-      }
-
-      if (!result.success && apiKeys.gemini) {
-        result = await callGemini(question, apiKeys.gemini);
-        usedProvider = 'gemini';
-        console.log('Gemini result:', result.success, result.error || 'ok');
-      }
-
-      if (!result.success && apiKeys.deepseek) {
-        result = await callDeepSeek(question, apiKeys.deepseek);
-        usedProvider = 'deepseek';
-        console.log('DeepSeek result:', result.success, result.error || 'ok');
-      }
-
-      if (!result.success && apiKeys.omniroute) {
-        result = await callOmniRoute(question, apiKeys.omniroute);
-        usedProvider = 'omniroute';
-        console.log('OmniRoute result:', result.success, result.error || 'ok');
+      if (!result.success && route.fallback) {
+        for (const fb of route.fallback(question, apiKeys)) {
+          result = await fb.call(question, apiKeys);
+          usedProvider = fb.provider;
+          console.log('Fallback to', usedProvider, ':', result.success, result.error || 'ok');
+          if (result.success) break;
+        }
       }
 
       if (!result.success) {
