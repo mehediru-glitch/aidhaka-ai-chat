@@ -288,10 +288,14 @@ app.post('/api/chat', async (req, res) => {
 
     // Load API keys from file or environment variables
     let apiKeys = {};
+    let keysSource = 'none';
     try {
       const keysFile = process.env.KEYS_FILE || '/home/diamonds/aidhaka.json';
       if (fs.existsSync(keysFile)) {
         apiKeys = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
+        keysSource = 'file:' + keysFile;
+      } else {
+        console.log('Keys file not found:', keysFile);
       }
     } catch (err) {
       console.error('Error loading keys file:', err.message);
@@ -300,13 +304,21 @@ app.post('/api/chat', async (req, res) => {
     // Fallback to environment variables if file not found
     if (!apiKeys.omniroute && process.env.OMNIROUTE_API_KEY) {
       apiKeys.omniroute = process.env.OMNIROUTE_API_KEY;
+      keysSource += ' env:OMNIROUTE_API_KEY';
     }
     if (!apiKeys.payment && process.env.PAYMENT_API_KEY) {
       apiKeys.payment = process.env.PAYMENT_API_KEY;
+      keysSource += ' env:PAYMENT_API_KEY';
     }
     if (!apiKeys.bkash && process.env.BKASH_NUMBER) {
       apiKeys.bkash = process.env.BKASH_NUMBER;
+      keysSource += ' env:BKASH_NUMBER';
     }
+    
+    console.log('API Keys loaded from:', keysSource);
+    console.log('OmniRoute key present:', !!apiKeys.omniroute);
+    console.log('Payment key present:', !!apiKeys.payment);
+    console.log('BKASH number present:', !!apiKeys.bkash);
 
     let result = null;
     let usedProvider = '';
