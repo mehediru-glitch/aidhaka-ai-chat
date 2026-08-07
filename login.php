@@ -65,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
             
             <form method="POST" action="" class="auth-form" id="login-form">
+                <?= csrfField(); ?>
                 <div class="form-group">
                     <label class="form-label" data-i18n="label_email">Email Address</label>
                     <input type="email" name="email" class="form-input" placeholder="you@example.com" required>

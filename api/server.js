@@ -14,12 +14,28 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
+// Request ID middleware
+app.use((req, res, next) => {
+  req.id = require('crypto').randomUUID();
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
+
 // Middleware
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(cors({ origin: '*', credentials: true }));
+app.use(helmet({ 
+  contentSecurityPolicy: false, 
+  crossOriginEmbedderPolicy: false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+}));
+app.use(cors({ 
+  origin: process.env.FRONTEND_URL || 'https://aidhaka.aiammu.com', 
+  credentials: true 
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(morgan('combined'));
+app.use(morgan('combined', {
+  skip: (req) => req.url.includes('/api/chat') && req.method === 'POST'
+}));
 
 // Rate limiting with error boundary
 const limiter = rateLimit({
@@ -32,6 +48,45 @@ const safeLimiter = (req, res, next) => {
   try { limiter(req, res, next); } catch (e) { next(); }
 };
 app.use('/api/', safeLimiter);
+
+// Per-user chat rate limiting
+const userRateLimit = new Map();
+const USER_RATE_LIMIT_WINDOW = 60 * 1000;
+const USER_RATE_LIMIT_MAX = 30;
+
+function checkUserRateLimit(userId) {
+  const now = Date.now();
+  const key = `user_${userId}`;
+  
+  if (!userRateLimit.has(key)) {
+    userRateLimit.set(key, { count: 1, resetAt: now + USER_RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  const record = userRateLimit.get(key);
+  if (now > record.resetAt) {
+    record.count = 1;
+    record.resetAt = now + USER_RATE_LIMIT_WINDOW;
+    return true;
+  }
+  
+  if (record.count >= USER_RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  record.count++;
+  return true;
+}
+
+// Cleanup old rate limit records periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of userRateLimit.entries()) {
+    if (now > record.resetAt) {
+      userRateLimit.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // ============================================
 // LOAD CONFIGURATION
@@ -172,41 +227,44 @@ function routeQuestion(question, apiKeys) {
 
 async function callPollinationsAI(question) {
   const models = ['openai', 'gpt', 'mistral', 'llama'];
-  const maxRetries = 0;
+  const maxRetries = 2;
 
   for (const model of models) {
-    try {
-      const response = await axios.post(
-        'https://text.pollinations.ai/',
-        {
-          messages: [
-            { role: 'user', content: question }
-          ],
-          model: model,
-          temperature: 0.7
-        },
-        { timeout: 12000 }
-      );
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await axios.post(
+          'https://text.pollinations.ai/',
+          {
+            messages: [
+              { role: 'user', content: question }
+            ],
+            model: model,
+            temperature: 0.7
+          },
+          { timeout: 12000 }
+        );
 
-      let reply = response.data?.choices?.[0]?.message?.content ||
-                  response.data?.response ||
-                  response.data?.output ||
-                  response.data?.text ||
-                  response.data;
+        let reply = response.data?.choices?.[0]?.message?.content ||
+                    response.data?.response ||
+                    response.data?.output ||
+                    response.data?.text ||
+                    response.data;
 
-      if (typeof reply === 'object') {
-        reply = JSON.stringify(reply);
-      }
+        if (typeof reply === 'object') {
+          reply = JSON.stringify(reply);
+        }
 
-      if (!reply) {
-        reply = 'No response content from AI provider.';
-      }
+        if (!reply) {
+          reply = 'No response content from AI provider.';
+        }
 
-      return { success: true, reply, provider: 'pollinations' };
-    } catch (err) {
-      const status = err.response?.status;
-      if (status === 402 || status === 429) {
-        continue;
+        return { success: true, reply, provider: 'pollinations' };
+      } catch (err) {
+        const status = err.response?.status;
+        if (status === 402 || status === 429) {
+          continue;
+        }
+        if (attempt < maxRetries) continue;
       }
     }
   }
@@ -236,7 +294,7 @@ async function callGroq(question, apiKey) {
     const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
     return { success: true, reply, provider: 'groq' };
   } catch (err) {
-    return { success: false, error: err.message, provider: 'groq' };
+    return { success: false, error: 'Groq service unavailable', provider: 'groq' };
   }
 }
 
@@ -261,7 +319,7 @@ async function callGemini(question, apiKey) {
                   'Sorry, I could not generate a response.';
     return { success: true, reply, provider: 'gemini' };
   } catch (err) {
-    return { success: false, error: err.message, provider: 'gemini' };
+    return { success: false, error: 'Gemini service unavailable', provider: 'gemini' };
   }
 }
 
@@ -287,7 +345,7 @@ async function callDeepSeek(question, apiKey) {
     const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
     return { success: true, reply, provider: 'deepseek' };
   } catch (err) {
-    return { success: false, error: err.message, provider: 'deepseek' };
+    return { success: false, error: 'DeepSeek service unavailable', provider: 'deepseek' };
   }
 }
 
@@ -313,7 +371,7 @@ async function callOmniRoute(question, apiKey) {
     const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
     return { success: true, reply, provider: 'omniroute' };
   } catch (err) {
-    return { success: false, error: err.message, provider: 'omniroute' };
+    return { success: false, error: 'OmniRoute service unavailable', provider: 'omniroute' };
   }
 }
 
@@ -336,7 +394,7 @@ async function callCohere(question, apiKey) {
     const reply = response.data?.text || 'Sorry, I could not generate a response.';
     return { success: true, reply, provider: 'cohere' };
   } catch (err) {
-    return { success: false, error: err.message, provider: 'cohere' };
+    return { success: false, error: 'Cohere service unavailable', provider: 'cohere' };
   }
 }
 
@@ -421,6 +479,10 @@ app.post('/api/chat', async (req, res) => {
 
     if (!question || !question.trim()) {
       return res.status(400).json({ success: false, error: 'Message cannot be empty' });
+    }
+
+    if (user_id && !checkUserRateLimit(user_id)) {
+      return res.status(429).json({ success: false, error: 'Too many requests. Please wait a moment.' });
     }
 
     let apiKeys = {};

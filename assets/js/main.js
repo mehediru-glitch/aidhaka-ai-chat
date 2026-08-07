@@ -6,6 +6,7 @@ let currentLang = localStorage.getItem('aidhaka_lang') || 'en';
 let isChatLoading = false;
 let chatHistoryLoaded = false;
 let notificationEnabled = true;
+let lastFailedMessage = '';
 
 document.addEventListener('DOMContentLoaded', () => {
   initLanguage();
@@ -13,8 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initChat();
   initAnimations();
   
-  // Load chat history from API
-  if (typeof currentUserId !== 'undefined') {
+  if (document.body.classList.contains('chat-page')) {
     loadChatHistory();
   }
 });
@@ -70,21 +70,28 @@ function t(key) {
 function playNotificationSound() {
   if (!notificationEnabled) return;
   try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+    
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
     
     oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    gainNode.connect(ctx.destination);
     
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-    oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
+    oscillator.frequency.setValueAtTime(800, ctx.currentTime);
+    oscillator.frequency.setValueAtTime(1000, ctx.currentTime + 0.1);
     
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
     
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.3);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + 0.3);
   } catch (e) {
     console.error('Notification sound error:', e);
   }
@@ -126,6 +133,7 @@ function initChat() {
   const menuToggle = document.getElementById('menu-toggle');
   const sidebarClose = document.getElementById('sidebar-close');
   const sidebar = document.getElementById('chat-sidebar');
+  const connectionStatus = document.getElementById('connection-status');
   
   if (!textarea) return;
 
@@ -164,6 +172,21 @@ function initChat() {
       sidebar.classList.remove('open');
     }
   });
+
+  // Connection status
+  if (connectionStatus) {
+    const updateStatus = (online) => {
+      const dot = connectionStatus.querySelector('.status-dot');
+      if (dot) {
+        dot.style.background = online ? 'var(--success)' : 'var(--error)';
+        dot.style.animation = online ? 'pulse 2s infinite' : 'none';
+      }
+    };
+
+    window.addEventListener('online', () => updateStatus(true));
+    window.addEventListener('offline', () => updateStatus(false));
+    updateStatus(navigator.onLine);
+  }
 }
 
 async function loadChatHistory() {
@@ -173,18 +196,13 @@ async function loadChatHistory() {
   if (!container) return;
   
   try {
-    const url = `${HISTORY_API_URL}/index.php?user_id=${currentUserId}`;
-    console.log('Loading chat history from:', url);
-    
-    const response = await fetch(url);
-    console.log('History response status:', response.status);
+    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
     const data = await response.json();
-    console.log('History data:', data);
     
     if (data.success && data.history && data.history.length > 0) {
       container.innerHTML = '';
@@ -199,7 +217,9 @@ async function loadChatHistory() {
       loadSidebarHistory(data.history);
     }
   } catch (err) {
-    console.error('Failed to load chat history:', err);
+    if (typeof __DEBUG__ !== 'undefined') {
+      console.error('Failed to load chat history:', err);
+    }
   }
 }
 
@@ -213,6 +233,7 @@ function loadSidebarHistory(history) {
     history.forEach((msg, index) => {
       const item = document.createElement('div');
       item.className = 'history-item';
+      item.dataset.index = index;
       
       const content = document.createElement('div');
       content.className = 'history-item-content';
@@ -229,7 +250,7 @@ function loadSidebarHistory(history) {
       deleteBtn.title = 'Delete this chat';
       deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        deleteSingleHistory(index, msg.question);
+        deleteSingleHistory(item, msg.question);
       });
       
       item.appendChild(content);
@@ -249,7 +270,7 @@ function loadSidebarHistory(history) {
   }
 }
 
-async function deleteSingleHistory(index, question) {
+async function deleteSingleHistory(itemElement, question) {
   if (!confirm('Delete this chat?')) return;
   
   try {
@@ -260,9 +281,8 @@ async function deleteSingleHistory(index, question) {
     });
     
     if (response.ok) {
-      const historyItem = document.querySelectorAll('.history-item')[index];
-      if (historyItem) {
-        historyItem.remove();
+      if (itemElement) {
+        itemElement.remove();
       }
       chatHistoryLoaded = false;
       loadChatHistory();
@@ -275,9 +295,13 @@ async function deleteSingleHistory(index, question) {
 async function clearAllHistory() {
   if (!confirm('Clear all chat history? This cannot be undone.')) return;
   
+  const btn = document.querySelector('.history-clear-btn');
+  if (btn) btn.disabled = true;
+  
   try {
     const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
     });
     
     if (response.ok) {
@@ -285,6 +309,9 @@ async function clearAllHistory() {
     }
   } catch (err) {
     console.error('Failed to clear chat:', err);
+    startNewChat();
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -310,22 +337,26 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-async function sendMessage() {
+async function sendMessage(retryMessage = null) {
   const textarea = document.getElementById('chat-input');
   const sendBtn = document.getElementById('send-btn');
-  const message = textarea.value.trim();
+  const message = retryMessage || textarea.value.trim();
 
   if (!message || isChatLoading) return;
 
   isChatLoading = true;
-  sendBtn.disabled = true;
-  textarea.value = '';
-  textarea.style.height = 'auto';
-
-  appendMessage('user', message);
+  if (!retryMessage) {
+    sendBtn.disabled = true;
+    textarea.value = '';
+    textarea.style.height = 'auto';
+    appendMessage('user', message);
+  }
   showSkeletonLoading();
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    
     const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -333,27 +364,37 @@ async function sendMessage() {
         question: message,
         language: currentLang,
         user_id: currentUserId
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
     const data = await response.json();
     removeSkeletonLoading();
 
     if (data.reply) {
-      appendMessage('assistant', data.reply);
+      appendMessage('assistant', data.reply, true, data.provider);
       chatHistoryLoaded = true;
+      lastFailedMessage = '';
       playNotificationSound();
       
       saveToHistoryLocally(message, data.reply, data.provider || 'unknown');
     } else {
-      appendMessage('assistant', data.error || t('chat_error'));
+      lastFailedMessage = message;
+      appendMessage('assistant', data.error || t('chat_error'), true, null, true);
     }
   } catch (err) {
     removeSkeletonLoading();
-    appendMessage('assistant', t('chat_network_error'));
+    if (err.name === 'AbortError') {
+      appendMessage('assistant', 'Request timed out. Please try again.');
+    } else {
+      appendMessage('assistant', t('chat_network_error'));
+    }
   } finally {
     isChatLoading = false;
     sendBtn.disabled = false;
+    textarea.focus();
   }
 }
 
@@ -380,13 +421,14 @@ function removeSkeletonLoading() {
   if (skeleton) skeleton.remove();
 }
 
-function appendMessage(role, content, animate = true) {
+function appendMessage(role, content, animate = true, provider = null, isError = false) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
 
   const messageDiv = document.createElement('div');
   messageDiv.className = `message message-${role}`;
   if (!animate) messageDiv.style.animation = 'none';
+  if (isError) messageDiv.classList.add('message-error');
 
   const avatar = document.createElement('div');
   avatar.className = 'message-avatar';
@@ -395,11 +437,30 @@ function appendMessage(role, content, animate = true) {
   const messageContent = document.createElement('div');
   messageContent.className = 'message-content';
 
+  if (role === 'assistant' && provider) {
+    const providerBadge = document.createElement('div');
+    providerBadge.className = 'message-provider';
+    providerBadge.textContent = provider;
+    messageContent.appendChild(providerBadge);
+  }
+
   const messageText = document.createElement('div');
   messageText.className = 'message-text';
   messageText.innerHTML = parseMarkdown(content);
 
   messageContent.appendChild(messageText);
+  
+  if (isError) {
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'retry-btn';
+    retryBtn.textContent = '🔄 Retry';
+    retryBtn.addEventListener('click', () => {
+      retryBtn.remove();
+      sendMessage(lastFailedMessage);
+    });
+    messageContent.appendChild(retryBtn);
+  }
+  
   messageDiv.appendChild(avatar);
   messageDiv.appendChild(messageContent);
   container.appendChild(messageDiv);
@@ -507,13 +568,22 @@ function previewCode(btn) {
     preview.style.display = 'block';
     btn.textContent = '◼ Close';
 
-    if (lang === 'html' || lang === 'css' || lang === 'javascript' || lang === 'js') {
-      if (lang === 'html') {
-        preview.innerHTML = code;
-      } else if (lang === 'css') {
-        preview.innerHTML = `<style>${code}</style><div class="preview-content">Try editing this CSS</div>`;
-      } else if (lang === 'javascript' || lang === 'js') {
-        preview.innerHTML = `<div class="preview-content"><pre id="js-output"></pre></div><script>try { const output = eval(\`${code.replace(/`/g, '\\`')}\`); document.getElementById('js-output').textContent = typeof output !== 'undefined' ? output : 'Executed successfully'; } catch(e) { document.getElementById('js-output').textContent = 'Error: ' + e.message; }<\/script>`;
+    if (lang === 'html') {
+      preview.innerHTML = code;
+    } else if (lang === 'css') {
+      preview.innerHTML = `<style>${escapeHtml(code)}</style><div class="preview-content">${t('preview_css')}</div>`;
+    } else if (lang === 'javascript' || lang === 'js') {
+      const outputDiv = document.createElement('pre');
+      outputDiv.id = 'js-output';
+      outputDiv.style.cssText = 'background:#f4f4f4;padding:10px;border-radius:4px;overflow:auto;';
+      preview.innerHTML = '';
+      preview.appendChild(outputDiv);
+      
+      try {
+        const fn = new Function(code + '\nif (typeof output !== "undefined") document.getElementById("js-output").textContent = output;');
+        fn();
+      } catch (e) {
+        document.getElementById('js-output').textContent = 'Error: ' + e.message;
       }
     }
   } else {
@@ -570,19 +640,6 @@ function startNewChat() {
   `;
   
   chatHistoryLoaded = false;
-}
-
-function clearAllHistory() {
-  if (!confirm('Clear all chat history?')) return;
-  
-  fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
-    method: 'DELETE'
-  }).then(() => {
-    startNewChat();
-  }).catch(err => {
-    console.error('Failed to clear chat:', err);
-    startNewChat();
-  });
 }
 
 // ============================================

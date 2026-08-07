@@ -85,6 +85,9 @@ $userLanguage = $user['language'] ?? 'en';
                 <span></span>
             </button>
             <h1 data-i18n="chat_title">Aidhaka AI Chat</h1>
+            <div class="connection-status" id="connection-status" title="Connection status">
+                <span class="status-dot"></span>
+            </div>
             <div class="lang-toggle">
                 <button class="lang-btn active" data-lang="en" onclick="setLanguage('en')">EN</button>
                 <button class="lang-btn" data-lang="bn" onclick="setLanguage('bn')">বাংলা</button>
@@ -132,7 +135,7 @@ $userLanguage = $user['language'] ?? 'en';
         const currentLanguage = '<?= $userLanguage; ?>';
         const currentUserId = <?= $user['id']; ?>;
         const API_BASE_URL = '<?= rtrim(SITE_URL, "/"); ?>';
-        const HISTORY_API_URL = '/api/chat';
+        const HISTORY_API_URL = API_BASE_URL + '/api/chat';
     </script>
 </body>
 </html>

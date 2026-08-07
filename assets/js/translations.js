@@ -91,6 +91,7 @@ const TRANSLATIONS = {
     loading: "Loading...",
     success: "Success",
     error: "Error",
+    preview_css: "CSS Preview",
     version: "v1.0.0"
   },
   bn: {
@@ -184,6 +185,7 @@ const TRANSLATIONS = {
     loading: "লোড হচ্ছে...",
     success: "সফল",
     error: "ত্রুটি",
+    preview_css: "CSS প্রিভিউ",
     version: "v১.০.০"
   }
 };

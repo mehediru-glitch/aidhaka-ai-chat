@@ -8,6 +8,7 @@ if (isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
     $fullName = sanitize($_POST['full_name'] ?? '');
     $email = sanitize($_POST['email'] ?? '');
     $phone = sanitize($_POST['phone'] ?? '');
@@ -73,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
             
             <form method="POST" action="" class="auth-form" id="register-form">
+                <?= csrfField(); ?>
                 <div class="form-group">
                     <label class="form-label" data-i18n="label_full_name">Full Name</label>
                     <input type="text" name="full_name" class="form-input" placeholder="Enter your full name" required>

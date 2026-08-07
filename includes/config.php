@@ -21,9 +21,12 @@ define('KEYS_FILE', '/home/diamonds/aidhaka.json');
 // Load API keys
 $apiKeys = [];
 if (file_exists(KEYS_FILE)) {
-    $apiKeys = json_decode(file_get_contents(KEYS_FILE), true);
-    if (!is_array($apiKeys)) {
-        $apiKeys = [];
+    $content = @file_get_contents(KEYS_FILE);
+    if ($content !== false) {
+        $decoded = json_decode($content, true);
+        if (is_array($decoded)) {
+            $apiKeys = $decoded;
+        }
     }
 }
 

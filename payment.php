@@ -21,6 +21,7 @@ $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
     $trxid = sanitize($_POST['trxid'] ?? '');
     $amount = sanitize($_POST['amount'] ?? '');
     
@@ -42,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'Content-Type: application/json',
             'X-API-Key: ' . PAYMENT_API_KEY
         ]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -130,6 +132,7 @@ $bkashNumber = BKASH_NUMBER;
             </div>
             
             <form method="POST" action="" class="payment-form" id="payment-form">
+                <?= csrfField(); ?>
                 <div class="form-group">
                     <label class="form-label" data-i18n="label_trxid">Transaction ID (TRXID)</label>
                     <input type="text" name="trxid" class="form-input" placeholder="e.g., ABC123XYZ789" required>
