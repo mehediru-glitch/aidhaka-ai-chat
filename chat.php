@@ -78,13 +78,6 @@ $userLanguage = $user['language'] ?? 'en';
     </aside>
 
     <main class="chat-main">
-        <?php if (!$isPaid && $trialDaysLeft > 0): ?>
-            <div class="trial-banner">
-                <span>⚡</span>
-                <span><?= $trialDaysLeft; ?> <?= $trialDaysLeft === 1 ? 'day' : 'days'; ?> left in your trial</span>
-            </div>
-        <?php endif; ?>
-        
         <div class="chat-header">
             <button class="menu-toggle" id="menu-toggle" aria-label="Toggle sidebar">
                 <span></span>
