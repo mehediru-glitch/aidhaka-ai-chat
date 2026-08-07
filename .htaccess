@@ -1,0 +1,46 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Force HTTPS
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Proxy API requests to Node.js server (port 3000)
+    RewriteCond %{REQUEST_URI} ^/api/
+    RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
+
+    # Remove .php extension for clean URLs
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([^\.]+)$ $1.php [L]
+
+    # Security Headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Block sensitive files
+<FilesMatch "\.(env|sql|log|md|txt|json)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^(composer\.json|package\.json|ecosystem\.config\.js|server\.js)$">
+    Require all denied
+</FilesMatch>
+
+# Block cache directories (if ever placed inside web root)
+<DirectoryMatch "cache|aidhaka-cache">
+    Require all denied
+</DirectoryMatch>
+
+# Disable directory listing
+Options -Indexes
+
+# PHP Settings
+php_value upload_max_filesize 10M
+php_value post_max_size 10M
+php_value max_execution_time 300
+php_value max_input_time 300

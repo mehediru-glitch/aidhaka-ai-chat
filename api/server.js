@@ -1,0 +1,467 @@
+const express = require('express');
+const axios = require('axios');
+const mysql = require('mysql2');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.set('trust proxy', 1);
+
+// Middleware
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(cors({ origin: 'https://aidhaka.aiammu.com', credentials: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(morgan('combined'));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { success: false, message: 'Too many requests, please try again later.' }
+});
+app.use('/api/', limiter);
+
+// ============================================
+// LOAD CONFIGURATION
+// ============================================
+const KEYS_FILE = process.env.KEYS_FILE || '/home/diamonds/aidhaka.json';
+let API_KEYS = {};
+
+try {
+  if (fs.existsSync(KEYS_FILE)) {
+    API_KEYS = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'));
+  }
+} catch (err) {
+  console.error('Error reading keys file:', err.message);
+}
+
+const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY || API_KEYS.omniroute || '';
+const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || API_KEYS.payment || '';
+const BKASH_NUMBER = process.env.BKASH_NUMBER || API_KEYS.bkash || '01552665356';
+
+// Chat cache directory (OUTSIDE web root)
+const CACHE_DIR = process.env.CACHE_DIR || '/home/diamonds/aidhaka-cache';
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// ============================================
+// DATABASE CONNECTION
+// ============================================
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'diamonds_aidhaka',
+  password: process.env.DB_PASS || 'omorhafsaM1@',
+  database: process.env.DB_NAME || 'diamonds_aidhaka',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+}).promise();
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Aidhaka AI API is running', 
+    timestamp: new Date().toISOString(),
+    providers: ['pollinations', 'groq', 'gemini', 'deepseek', 'omniroute']
+  });
+});
+
+// ============================================
+// AI PROVIDERS
+// ============================================
+
+async function callPollinationsAI(question) {
+  try {
+    const response = await axios.post(
+      'https://text.pollinations.ai/',
+      {
+        messages: [
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'user', content: question }
+        ],
+        model: 'openai',
+        temperature: 0.7
+      },
+      { timeout: 60000 }
+    );
+
+    let reply = response.data?.choices?.[0]?.message?.content ||
+                response.data?.response ||
+                response.data?.output ||
+                response.data?.text ||
+                response.data;
+
+    if (typeof reply === 'object') {
+      reply = JSON.stringify(reply);
+    }
+
+    return { success: true, reply, provider: 'pollinations' };
+  } catch (err) {
+    return { success: false, error: err.message, provider: 'pollinations' };
+  }
+}
+
+async function callGroq(question, apiKey) {
+  try {
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama-3.1-70b-versatile',
+        messages: [
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'user', content: question }
+        ],
+        max_tokens: 2000,
+        temperature: 0.7
+      },
+      {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000
+      }
+    );
+
+    const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    return { success: true, reply, provider: 'groq' };
+  } catch (err) {
+    return { success: false, error: err.message, provider: 'groq' };
+  }
+}
+
+async function callGemini(question, apiKey) {
+  try {
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+      { contents: [{ parts: [{ text: question }] }] },
+      { timeout: 60000 }
+    );
+
+    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || 
+                  'Sorry, I could not generate a response.';
+    return { success: true, reply, provider: 'gemini' };
+  } catch (err) {
+    return { success: false, error: err.message, provider: 'gemini' };
+  }
+}
+
+async function callDeepSeek(question, apiKey) {
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'deepseek/deepseek-chat',
+        messages: [
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'user', content: question }
+        ],
+        max_tokens: 2000,
+        temperature: 0.7
+      },
+      {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000
+      }
+    );
+
+    const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    return { success: true, reply, provider: 'deepseek' };
+  } catch (err) {
+    return { success: false, error: err.message, provider: 'deepseek' };
+  }
+}
+
+async function callOmniRoute(question, apiKey) {
+  try {
+    const response = await axios.post(
+      'https://cloud.omniroute.online/v1/chat/completions',
+      {
+        model: 'deepseek/deepseek-chat',
+        messages: [
+          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
+          { role: 'user', content: question }
+        ],
+        max_tokens: 2000,
+        temperature: 0.7
+      },
+      {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000
+      }
+    );
+
+    const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    return { success: true, reply, provider: 'omniroute' };
+  } catch (err) {
+    return { success: false, error: err.message, provider: 'omniroute' };
+  }
+}
+
+// ============================================
+// CHAT HISTORY HELPERS
+// ============================================
+
+async function saveChatToDB(userId, question, answer, provider) {
+  try {
+    await pool.execute(
+      'INSERT INTO chat_history (user_id, question, answer) VALUES (?, ?, ?)',
+      [userId, question, answer]
+    );
+  } catch (err) {
+    console.error('Error saving chat to DB:', err.message);
+  }
+}
+
+async function getChatHistoryFromDB(userId) {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT question, answer, created_at FROM chat_history WHERE user_id = ? ORDER BY created_at ASC',
+      [userId]
+    );
+    return rows;
+  } catch (err) {
+    console.error('Error fetching chat history:', err.message);
+    return [];
+  }
+}
+
+async function clearChatHistoryInDB(userId) {
+  try {
+    await pool.execute('DELETE FROM chat_history WHERE user_id = ?', [userId]);
+  } catch (err) {
+    console.error('Error clearing chat history:', err.message);
+  }
+}
+
+function getCacheFilePath(userId) {
+  return path.join(CACHE_DIR, `chat-${userId}.json`);
+}
+
+async function getChatCache(userId) {
+  try {
+    const cacheFile = getCacheFilePath(userId);
+    if (fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      return data;
+    }
+  } catch (err) {
+    console.error('Error reading cache:', err.message);
+  }
+  return [];
+}
+
+async function setChatCache(userId, history) {
+  try {
+    const cacheFile = getCacheFilePath(userId);
+    fs.writeFileSync(cacheFile, JSON.stringify(history, null, 2));
+  } catch (err) {
+    console.error('Error writing cache:', err.message);
+  }
+}
+
+async function addToChatCache(userId, question, answer) {
+  const history = await getChatCache(userId);
+  history.push({ question, answer, timestamp: new Date().toISOString() });
+  await setChatCache(userId, history);
+}
+
+// ============================================
+// CHAT ENDPOINT - Auto fallback + DB save
+// ============================================
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { question, provider, user_id } = req.body;
+    
+    if (!question || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'Message cannot be empty' });
+    }
+
+    // Load API keys
+    let apiKeys = {};
+    try {
+      const keysFile = process.env.KEYS_FILE || '/home/diamonds/aidhaka.json';
+      if (fs.existsSync(keysFile)) {
+        apiKeys = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
+      }
+    } catch (err) {
+      console.error('Error loading keys:', err.message);
+    }
+
+    let result = null;
+    let usedProvider = '';
+
+    // If user specified provider
+    if (provider === 'pollinations') {
+      result = await callPollinationsAI(question);
+      usedProvider = 'pollinations';
+    } else if (provider === 'groq' && apiKeys.groq) {
+      result = await callGroq(question, apiKeys.groq);
+      usedProvider = 'groq';
+    } else if (provider === 'gemini' && apiKeys.gemini) {
+      result = await callGemini(question, apiKeys.gemini);
+      usedProvider = 'gemini';
+    } else if (provider === 'deepseek' && apiKeys.omniroute) {
+      result = await callDeepSeek(question, apiKeys.omniroute);
+      usedProvider = 'deepseek';
+    } else if (provider === 'omniroute' && apiKeys.omniroute) {
+      result = await callOmniRoute(question, apiKeys.omniroute);
+      usedProvider = 'omniroute';
+    } else {
+      // AUTO MODE: Try free providers in order
+      result = await callPollinationsAI(question);
+      usedProvider = 'pollinations';
+
+      if (!result.success && apiKeys.groq) {
+        result = await callGroq(question, apiKeys.groq);
+        usedProvider = 'groq';
+      }
+
+      if (!result.success && apiKeys.gemini) {
+        result = await callGemini(question, apiKeys.gemini);
+        usedProvider = 'gemini';
+      }
+
+      if (!result.success && apiKeys.omniroute) {
+        result = await callDeepSeek(question, apiKeys.omniroute);
+        usedProvider = 'deepseek';
+      }
+
+      if (!result.success && apiKeys.omniroute) {
+        result = await callOmniRoute(question, apiKeys.omniroute);
+        usedProvider = 'omniroute';
+      }
+
+      if (!result.success) {
+        const fallbacks = [
+          "Hello! I'm Aidhaka AI. How can I help you today?",
+          "That's an interesting question! Let me think about it.",
+          "I'm here to help! What would you like to know?",
+          "Great question! I'll do my best to answer.",
+          "Thank you for asking! Let me provide some information."
+        ];
+        const fallbackReply = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        result = { success: true, reply: fallbackReply + " (Note: Using fallback response.)", provider: 'fallback' };
+        usedProvider = 'fallback';
+      }
+    }
+
+    // Save to DB and cache if user_id provided
+    if (user_id && result.success) {
+      saveChatToDB(user_id, question, result.reply, usedProvider);
+      addToChatCache(user_id, question, result.reply);
+    }
+
+    res.json({ success: true, reply: result.reply, provider: usedProvider });
+
+  } catch (err) {
+    console.error('Chat error:', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Something went wrong. Please try again.' });
+  }
+});
+
+// ============================================
+// CHAT HISTORY ENDPOINTS
+// ============================================
+
+// Get chat history
+app.get('/api/chat/history', async (req, res) => {
+  try {
+    const user_id = req.query.user_id;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    // Try cache first (faster)
+    let history = await getChatCache(parseInt(user_id));
+    
+    // If cache empty, load from DB
+    if (!history || history.length === 0) {
+      history = await getChatHistoryFromDB(parseInt(user_id));
+      await setChatCache(parseInt(user_id), history);
+    }
+
+    res.json({ success: true, history });
+  } catch (err) {
+    console.error('History error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load history' });
+  }
+});
+
+// Clear chat history
+app.post('/api/chat/clear', async (req, res) => {
+  try {
+    const user_id = req.body.user_id;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    await clearChatHistoryInDB(parseInt(user_id));
+    
+    // Clear cache
+    const cacheFile = getCacheFilePath(parseInt(user_id));
+    if (fs.existsSync(cacheFile)) {
+      fs.unlinkSync(cacheFile);
+    }
+
+    res.json({ success: true, message: 'Chat history cleared' });
+  } catch (err) {
+    console.error('Clear error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to clear history' });
+  }
+});
+
+// Export chat as TXT
+app.get('/api/chat/export', async (req, res) => {
+  try {
+    const user_id = req.query.user_id;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const history = await getChatHistoryFromDB(parseInt(user_id));
+
+    let content = `Aidhaka AI - Chat History\n`;
+    content += `Generated: ${new Date().toLocaleString()}\n`;
+    content += `================================\n\n`;
+
+    history.forEach(msg => {
+      content += `[You]: ${msg.question}\n`;
+      content += `[Aidhaka AI]: ${msg.answer}\n\n`;
+    });
+
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="aidhaka-chat-${Date.now()}.txt"`);
+    res.send(content);
+  } catch (err) {
+    console.error('Export error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to export' });
+  }
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+});
+
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: 'Endpoint not found' });
+});
+
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Aidhaka AI API running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

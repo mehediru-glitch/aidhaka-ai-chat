@@ -1,0 +1,34 @@
+-- Database: diamonds_aidhaka
+-- Users table + chat history
+
+CREATE DATABASE IF NOT EXISTS diamonds_aidhaka
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE diamonds_aidhaka;
+
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    trial_start DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_paid TINYINT(1) DEFAULT 0,
+    paid_at DATETIME NULL,
+    language VARCHAR(10) DEFAULT 'en',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_email (email),
+    INDEX idx_is_paid (is_paid)
+);
+
+CREATE TABLE IF NOT EXISTS chat_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_created (user_id, created_at)
+);

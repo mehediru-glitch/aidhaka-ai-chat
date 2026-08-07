@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: aidhaka-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: node api/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DB_HOST
+        value: localhost
+      - key: DB_USER
+        value: diamonds_aidhaka
+      - key: DB_PASS
+        value: omorhafsaM1@
+      - key: DB_NAME
+        value: diamonds_aidhaka
+      - key: KEYS_FILE
+        value: /app/aidhaka.json
+      - key: FRONTEND_URL
+        value: https://aidhaka.aiammu.com
