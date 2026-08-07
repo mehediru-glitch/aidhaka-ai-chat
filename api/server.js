@@ -283,13 +283,15 @@ async function addToChatCache(userId, question, answer) {
 // CHAT ENDPOINT - Auto fallback + DB save
 // ============================================
 app.post('/api/chat', async (req, res) => {
-  let result, usedProvider;
+  console.log('Chat hit, body:', JSON.stringify(req.body));
   try {
     const { question, provider, user_id } = req.body;
+    console.log('Step 1: body parsed OK');
 
     if (!question || !question.trim()) {
       return res.status(400).json({ success: false, error: 'Message cannot be empty' });
     }
+    console.log('Step 2: question validated');
 
     // Load API keys from file or environment variables
     let apiKeys = {};
@@ -324,51 +326,103 @@ app.post('/api/chat', async (req, res) => {
     console.log('OmniRoute key present:', !!apiKeys.omniroute);
     console.log('Payment key present:', !!apiKeys.payment);
     console.log('BKASH number present:', !!apiKeys.bkash);
+    console.log('Step 3: keys loaded');
+
+    let result = null;
+    let usedProvider = '';
 
     // If user specified provider
     if (provider === 'pollinations') {
-      result = await callPollinationsAI(question);
-      usedProvider = 'pollinations';
+      console.log('Step 4: calling pollinations');
+      try {
+        result = await callPollinationsAI(question);
+        usedProvider = 'pollinations';
+        console.log('Step 5: pollinations done, success:', result.success);
+      } catch (pErr) {
+        console.error('Pollinations threw:', pErr.message, pErr.stack);
+        result = { success: false, error: pErr.message };
+      }
     } else if (provider === 'groq' && apiKeys.groq) {
-      result = await callGroq(question, apiKeys.groq);
-      usedProvider = 'groq';
-    } else if (provider === 'gemini' && apiKeys.gemini) {
-      result = await callGemini(question, apiKeys.gemini);
-      usedProvider = 'gemini';
-    } else if (provider === 'deepseek' && apiKeys.omniroute) {
-      result = await callDeepSeek(question, apiKeys.omniroute);
-      usedProvider = 'deepseek';
-    } else if (provider === 'omniroute' && apiKeys.omniroute) {
-      result = await callOmniRoute(question, apiKeys.omniroute);
-      usedProvider = 'omniroute';
-    } else {
-      // AUTO MODE: Try free providers in order
-      result = await callPollinationsAI(question);
-      usedProvider = 'pollinations';
-      console.log('Provider pollinations result:', result.success, result.error || 'ok');
-
-      if (!result.success && apiKeys.groq) {
+      try {
         result = await callGroq(question, apiKeys.groq);
         usedProvider = 'groq';
-        console.log('Provider groq result:', result.success, result.error || 'ok');
+      } catch (pErr) {
+        console.error('Groq threw:', pErr.message);
+        result = { success: false, error: pErr.message };
+      }
+    } else if (provider === 'gemini' && apiKeys.gemini) {
+      try {
+        result = await callGemini(question, apiKeys.gemini);
+        usedProvider = 'gemini';
+      } catch (pErr) {
+        console.error('Gemini threw:', pErr.message);
+        result = { success: false, error: pErr.message };
+      }
+    } else if (provider === 'deepseek' && apiKeys.omniroute) {
+      try {
+        result = await callDeepSeek(question, apiKeys.omniroute);
+        usedProvider = 'deepseek';
+      } catch (pErr) {
+        console.error('DeepSeek threw:', pErr.message);
+        result = { success: false, error: pErr.message };
+      }
+    } else if (provider === 'omniroute' && apiKeys.omniroute) {
+      try {
+        result = await callOmniRoute(question, apiKeys.omniroute);
+        usedProvider = 'omniroute';
+      } catch (pErr) {
+        console.error('OmniRoute threw:', pErr.message);
+        result = { success: false, error: pErr.message };
+      }
+    } else {
+      // AUTO MODE: Try free providers in order
+      try {
+        result = await callPollinationsAI(question);
+        usedProvider = 'pollinations';
+        console.log('Auto pollinations result:', result.success, result.error || 'ok');
+      } catch (pErr) {
+        console.error('Auto pollinations threw:', pErr.message, pErr.stack);
+        result = { success: false, error: pErr.message };
+      }
+
+      if (!result.success && apiKeys.groq) {
+        try {
+          result = await callGroq(question, apiKeys.groq);
+          usedProvider = 'groq';
+          console.log('Auto groq result:', result.success, result.error || 'ok');
+        } catch (pErr) {
+          console.error('Auto groq threw:', pErr.message);
+        }
       }
 
       if (!result.success && apiKeys.gemini) {
-        result = await callGemini(question, apiKeys.gemini);
-        usedProvider = 'gemini';
-        console.log('Provider gemini result:', result.success, result.error || 'ok');
+        try {
+          result = await callGemini(question, apiKeys.gemini);
+          usedProvider = 'gemini';
+          console.log('Auto gemini result:', result.success, result.error || 'ok');
+        } catch (pErr) {
+          console.error('Auto gemini threw:', pErr.message);
+        }
       }
 
       if (!result.success && apiKeys.omniroute) {
-        result = await callDeepSeek(question, apiKeys.omniroute);
-        usedProvider = 'deepseek';
-        console.log('Provider deepseek result:', result.success, result.error || 'ok');
+        try {
+          result = await callDeepSeek(question, apiKeys.omniroute);
+          usedProvider = 'deepseek';
+          console.log('Auto deepseek result:', result.success, result.error || 'ok');
+        } catch (pErr) {
+          console.error('Auto deepseek threw:', pErr.message);
+        }
       }
 
       if (!result.success && apiKeys.omniroute) {
-        result = await callOmniRoute(question, apiKeys.omniroute);
-        usedProvider = 'omniroute';
-        console.log('Provider omniroute result:', result.success, result.error || 'ok');
+        try {
+          result = await callOmniRoute(question, apiKeys.omniroute);
+          usedProvider = 'omniroute';
+          console.log('Auto omniroute result:', result.success, result.error || 'ok');
+        } catch (pErr) {
+          console.error('Auto omniroute threw:', pErr.message);
+        }
       }
 
       if (!result.success) {
@@ -384,27 +438,29 @@ app.post('/api/chat', async (req, res) => {
         usedProvider = 'fallback';
       }
     }
+    console.log('Step 6: provider done, used:', usedProvider, 'success:', result.success);
 
-    // Save to DB and cache if user_id provided (non-blocking, never crash the response)
+    // Save to DB and cache if user_id provided
     if (user_id && result.success) {
       try {
         await saveChatToDB(user_id, question, result.reply, usedProvider);
+        console.log('Step 7: DB saved');
       } catch (dbErr) {
         console.error('DB save error:', dbErr.message);
       }
       try {
         await addToChatCache(user_id, question, result.reply);
+        console.log('Step 8: cache saved');
       } catch (cacheErr) {
         console.error('Cache write error:', cacheErr.message);
       }
     }
 
     console.log('Final response - provider:', usedProvider, 'success:', result.success);
-
     res.json({ success: true, reply: result.reply, provider: usedProvider });
 
   } catch (err) {
-    console.error('Chat error:', err.message, err.stack);
+    console.error('CHAT ENDPOINT ERROR:', err.message, err.stack);
     res.status(500).json({ success: false, error: err.message || 'Something went wrong. Please try again.' });
   }
 });
