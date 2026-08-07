@@ -75,8 +75,9 @@ try {
     } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ?');
         $stmt->execute([$user_id]);
-        
-        echo json_encode(['success' => true, 'message' => 'Chat history cleared']);
+        $deletedRows = $stmt->rowCount();
+        error_log("DELETE history for user $user_id: rows=$deletedRows");
+        echo json_encode(['success' => true, 'message' => 'Chat history cleared', 'deleted_rows' => $deletedRows]);
     } else {
         http_response_code(405);
         echo json_encode(['success' => false, 'error' => 'Method not allowed']);
