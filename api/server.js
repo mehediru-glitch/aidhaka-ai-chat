@@ -78,6 +78,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.post('/api/test', (req, res) => {
+  console.log('TEST ENDPOINT HIT, body:', JSON.stringify(req.body));
+  res.json({ success: true, reply: 'test endpoint works', provider: 'test' });
+});
+
 // ============================================
 // AI PROVIDERS
 // ============================================
