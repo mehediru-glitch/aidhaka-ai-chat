@@ -90,18 +90,8 @@ app.get('/api/health', (req, res) => {
 // ============================================
 
 async function callPollinationsAI(question) {
-  const models = [
-    'openai',
-    'gpt',
-    'mistral',
-    'llama',
-    'pol/gpt-oss',
-    'pol/gemma',
-    'pol/deepseek-pro',
-    'pol/mistral-small-3.2'
-  ];
+  const models = ['openai', 'gpt', 'mistral', 'llama'];
   const maxRetries = 0;
-  const baseDelay = 500;
 
   for (const model of models) {
     try {
@@ -114,7 +104,7 @@ async function callPollinationsAI(question) {
           model: model,
           temperature: 0.7
         },
-        { timeout: 15000 }
+        { timeout: 12000 }
       );
 
       let reply = response.data?.choices?.[0]?.message?.content ||
@@ -140,7 +130,7 @@ async function callPollinationsAI(question) {
     }
   }
 
-  return { success: false, error: 'Pollinations unavailable after retries', provider: 'pollinations' };
+  return { success: false, error: 'Pollinations unavailable', provider: 'pollinations' };
 }
 
 async function callGroq(question, apiKey) {
