@@ -137,7 +137,6 @@ async function callPollinationsAI(question) {
       'https://text.pollinations.ai/',
       {
         messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant.' },
           { role: 'user', content: question }
         ],
         model: 'openai',
@@ -154,6 +153,10 @@ async function callPollinationsAI(question) {
 
     if (typeof reply === 'object') {
       reply = JSON.stringify(reply);
+    }
+
+    if (!reply) {
+      reply = 'No response content from AI provider.';
     }
 
     return { success: true, reply, provider: 'pollinations' };
