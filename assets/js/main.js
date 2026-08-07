@@ -250,7 +250,7 @@ function appendMessage(role, content, animate = true) {
 
   const messageText = document.createElement('div');
   messageText.className = 'message-text';
-  messageText.textContent = content;
+  messageText.innerHTML = parseMarkdown(content);
 
   messageContent.appendChild(messageText);
   messageDiv.appendChild(avatar);
@@ -258,6 +258,122 @@ function appendMessage(role, content, animate = true) {
   container.appendChild(messageDiv);
 
   container.scrollTop = container.scrollHeight;
+}
+
+function parseMarkdown(text) {
+  if (!text) return '';
+
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+  let match;
+  let codeIndex = 0;
+
+  while ((match = codeBlockRegex.exec(html)) !== null) {
+    const lang = match[1] || 'code';
+    const code = match[2].trim();
+    const escapedCode = code.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const placeholder = `<div class="code-block" data-lang="${lang}" data-code-index="${codeIndex}">
+      <div class="code-header">
+        <span class="code-lang">${lang}</span>
+        <div class="code-actions">
+          <button class="code-btn copy-btn" onclick="copyCode(this)" title="Copy code">📋 Copy</button>
+          <button class="code-btn download-btn" onclick="downloadCode(this)" title="Download file">⬇ Download</button>
+          ${isPreviewable(lang) ? `<button class="code-btn preview-btn" onclick="previewCode(this)" title="Live preview">▶ Preview</button>` : ''}
+        </div>
+      </div>
+      <pre><code>${escapeHtml(escapedCode)}</code></pre>
+      <div class="code-preview" style="display:none;"></div>
+    </div>`;
+    html = html.replace(match[0], placeholder);
+    codeIndex++;
+  }
+
+  html = html.replace(/```[\s\S]*?```/g, '');
+
+  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>');
+  html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+  html = html.replace(/\n/g, '<br>');
+
+  return html;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function isPreviewable(lang) {
+  const previewLangs = ['html', 'css', 'javascript', 'js'];
+  return previewLangs.includes(lang.toLowerCase());
+}
+
+function copyCode(btn) {
+  const codeBlock = btn.closest('.code-block');
+  const code = codeBlock.querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const originalText = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => { btn.textContent = originalText; }, 2000);
+  });
+}
+
+function downloadCode(btn) {
+  const codeBlock = btn.closest('.code-block');
+  const lang = codeBlock.dataset.lang;
+  const code = codeBlock.querySelector('code').textContent;
+  const ext = getExtension(lang);
+  const blob = new Blob([code], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `code.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function getExtension(lang) {
+  const map = { javascript: 'js', js: 'js', html: 'html', css: 'css', python: 'py', java: 'java', cpp: 'cpp', c: 'c', json: 'json', xml: 'xml', yaml: 'yaml', md: 'md', sql: 'sql', php: 'php', ruby: 'rb', go: 'go', rust: 'rs', typescript: 'ts' };
+  return map[lang.toLowerCase()] || 'txt';
+}
+
+function previewCode(btn) {
+  const codeBlock = btn.closest('.code-block');
+  const preview = codeBlock.querySelector('.code-preview');
+  const lang = codeBlock.dataset.lang.toLowerCase();
+  const code = codeBlock.querySelector('code').textContent;
+
+  if (preview.style.display === 'none') {
+    preview.style.display = 'block';
+    btn.textContent = '◼ Close';
+
+    if (lang === 'html' || lang === 'css' || lang === 'javascript' || lang === 'js') {
+      if (lang === 'html') {
+        preview.innerHTML = code;
+      } else if (lang === 'css') {
+        preview.innerHTML = `<style>${code}</style><div class="preview-content">Try editing this CSS</div>`;
+      } else if (lang === 'javascript' || lang === 'js') {
+        preview.innerHTML = `<div class="preview-content"><pre id="js-output"></pre></div><script>try { const output = eval(\`${code.replace(/`/g, '\\`')}\`); document.getElementById('js-output').textContent = typeof output !== 'undefined' ? output : 'Executed successfully'; } catch(e) { document.getElementById('js-output').textContent = 'Error: ' + e.message; }<\/script>`;
+      }
+    }
+  } else {
+    preview.style.display = 'none';
+    btn.textContent = '▶ Preview';
+    preview.innerHTML = '';
+  }
 }
 
 function downloadChat() {
