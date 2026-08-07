@@ -270,9 +270,13 @@ async function setChatCache(userId, history) {
 }
 
 async function addToChatCache(userId, question, answer) {
-  const history = await getChatCache(userId);
-  history.push({ question, answer, timestamp: new Date().toISOString() });
-  await setChatCache(userId, history);
+  try {
+    const history = await getChatCache(userId);
+    history.push({ question, answer, timestamp: new Date().toISOString() });
+    await setChatCache(userId, history);
+  } catch (err) {
+    console.error('Cache append error:', err.message);
+  }
 }
 
 // ============================================
@@ -343,25 +347,30 @@ app.post('/api/chat', async (req, res) => {
       // AUTO MODE: Try free providers in order
       result = await callPollinationsAI(question);
       usedProvider = 'pollinations';
+      console.log('Provider pollinations result:', result.success, result.error || 'ok');
 
       if (!result.success && apiKeys.groq) {
         result = await callGroq(question, apiKeys.groq);
         usedProvider = 'groq';
+        console.log('Provider groq result:', result.success, result.error || 'ok');
       }
 
       if (!result.success && apiKeys.gemini) {
         result = await callGemini(question, apiKeys.gemini);
         usedProvider = 'gemini';
+        console.log('Provider gemini result:', result.success, result.error || 'ok');
       }
 
       if (!result.success && apiKeys.omniroute) {
         result = await callDeepSeek(question, apiKeys.omniroute);
         usedProvider = 'deepseek';
+        console.log('Provider deepseek result:', result.success, result.error || 'ok');
       }
 
       if (!result.success && apiKeys.omniroute) {
         result = await callOmniRoute(question, apiKeys.omniroute);
         usedProvider = 'omniroute';
+        console.log('Provider omniroute result:', result.success, result.error || 'ok');
       }
 
       if (!result.success) {
@@ -378,11 +387,21 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // Save to DB and cache if user_id provided
+    // Save to DB and cache if user_id provided (non-blocking, never crash the response)
     if (user_id && result.success) {
-      saveChatToDB(user_id, question, result.reply, usedProvider).catch(() => {});
-      addToChatCache(user_id, question, result.reply).catch(() => {});
+      try {
+        await saveChatToDB(user_id, question, result.reply, usedProvider);
+      } catch (dbErr) {
+        console.error('DB save error:', dbErr.message);
+      }
+      try {
+        await addToChatCache(user_id, question, result.reply);
+      } catch (cacheErr) {
+        console.error('Cache write error:', cacheErr.message);
+      }
     }
+
+    console.log('Final response - provider:', usedProvider, 'success:', result.success);
 
     res.json({ success: true, reply: result.reply, provider: usedProvider });
 
