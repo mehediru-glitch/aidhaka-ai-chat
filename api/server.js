@@ -87,9 +87,18 @@ app.get('/api/health', (req, res) => {
 // ============================================
 
 async function callPollinationsAI(question) {
-  const models = ['openai', 'gpt', 'mistral', 'llama'];
-  const maxRetries = 2;
-  const baseDelay = 1000;
+  const models = [
+    'openai',
+    'gpt',
+    'mistral',
+    'llama',
+    'pol/gpt-oss',
+    'pol/gemma',
+    'pol/deepseek-pro',
+    'pol/mistral-small-3.2'
+  ];
+  const maxRetries = 1;
+  const baseDelay = 800;
 
   for (const model of models) {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -103,7 +112,7 @@ async function callPollinationsAI(question) {
             model: model,
             temperature: 0.7
           },
-          { timeout: 45000 }
+          { timeout: 30000 }
         );
 
         let reply = response.data?.choices?.[0]?.message?.content ||
