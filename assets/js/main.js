@@ -5,6 +5,7 @@
 let currentLang = localStorage.getItem('aidhaka_lang') || 'en';
 let isChatLoading = false;
 let chatHistoryLoaded = false;
+let notificationEnabled = true;
 
 document.addEventListener('DOMContentLoaded', () => {
   initLanguage();
@@ -64,6 +65,29 @@ function setLanguage(lang) {
 
 function t(key) {
   return TRANSLATIONS[currentLang]?.[key] || key;
+}
+
+function playNotificationSound() {
+  if (!notificationEnabled) return;
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+    oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.3);
+  } catch (e) {
+    console.error('Notification sound error:', e);
+  }
 }
 
 // ============================================
@@ -198,6 +222,7 @@ async function sendMessage() {
     if (data.reply) {
       appendMessage('assistant', data.reply);
       chatHistoryLoaded = true;
+      playNotificationSound();
     } else {
       appendMessage('assistant', data.error || t('chat_error'));
     }
