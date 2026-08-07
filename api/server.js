@@ -21,13 +21,29 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('combined'));
 
-// Rate limiting
+// Rate limiting (with error handling)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { success: false, message: 'Too many requests, please try again later.' }
+  message: { success: false, message: 'Too many requests, please try again later.' },
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
 });
-app.use('/api/', limiter);
+const limiterHandler = (req, res, next) => {
+  try {
+    return limiter(req, res, (err) => {
+      if (err) {
+        console.error('Rate limiter error:', err.message);
+        return next();
+      }
+      next();
+    });
+  } catch (err) {
+    console.error('Rate limiter sync error:', err.message);
+    return next();
+  }
+};
+app.use('/api/', limiterHandler);
 
 // ============================================
 // LOAD CONFIGURATION
