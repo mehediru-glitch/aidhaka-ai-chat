@@ -169,12 +169,24 @@ function initChat() {
 async function loadChatHistory() {
   if (chatHistoryLoaded) return;
   
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  
   try {
-    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`);
+    const url = `${HISTORY_API_URL}/index.php?user_id=${currentUserId}`;
+    console.log('Loading chat history from:', url);
+    
+    const response = await fetch(url);
+    console.log('History response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const data = await response.json();
+    console.log('History data:', data);
     
     if (data.success && data.history && data.history.length > 0) {
-      const container = document.getElementById('chat-messages');
       container.innerHTML = '';
       
       data.history.forEach(msg => {

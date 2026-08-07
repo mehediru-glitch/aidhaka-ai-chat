@@ -21,6 +21,8 @@ if (!$user_id) {
 }
 
 try {
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $pdo->prepare('SELECT question, answer, created_at FROM chat_history WHERE user_id = ? ORDER BY created_at ASC');
         $stmt->execute([$user_id]);
@@ -55,5 +57,5 @@ try {
 } catch (PDOException $e) {
     error_log('Chat history error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Database error']);
+    echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
 }
