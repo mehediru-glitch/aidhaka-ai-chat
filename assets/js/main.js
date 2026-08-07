@@ -170,7 +170,7 @@ async function loadChatHistory() {
   if (chatHistoryLoaded) return;
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/history?user_id=${currentUserId}`);
+    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`);
     const data = await response.json();
     
     if (data.success && data.history && data.history.length > 0) {
@@ -187,6 +187,18 @@ async function loadChatHistory() {
     }
   } catch (err) {
     console.error('Failed to load chat history:', err);
+  }
+}
+
+async function saveToHistoryLocally(question, answer, provider) {
+  try {
+    await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, answer, provider })
+    });
+  } catch (err) {
+    console.error('Failed to save chat history locally:', err);
   }
 }
 
@@ -223,6 +235,8 @@ async function sendMessage() {
       appendMessage('assistant', data.reply);
       chatHistoryLoaded = true;
       playNotificationSound();
+      
+      saveToHistoryLocally(message, data.reply, data.provider || 'unknown');
     } else {
       appendMessage('assistant', data.error || t('chat_error'));
     }
@@ -402,32 +416,37 @@ function previewCode(btn) {
 }
 
 function downloadChat() {
-  const messages = document.querySelectorAll('.message-text');
-  if (messages.length === 0) {
-    alert('No chat history to download');
-    return;
-  }
+  fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success || !data.history || data.history.length === 0) {
+        alert('No chat history to download');
+        return;
+      }
 
-  let content = `Aidhaka AI - Chat History\n`;
-  content += `Generated: ${new Date().toLocaleString()}\n`;
-  content += `${'='.repeat(50)}\n\n`;
+      let content = `Aidhaka AI - Chat History\n`;
+      content += `Generated: ${new Date().toLocaleString()}\n`;
+      content += `${'='.repeat(50)}\n\n`;
 
-  const messageDivs = document.querySelectorAll('.message');
-  messageDivs.forEach(msg => {
-    const role = msg.classList.contains('message-user') ? 'You' : 'Aidhaka AI';
-    const text = msg.querySelector('.message-text')?.textContent || '';
-    content += `[${role}]: ${text}\n\n`;
-  });
+      data.history.forEach(msg => {
+        content += `[You]: ${msg.question}\n`;
+        content += `[Aidhaka AI]: ${msg.answer}\n\n`;
+      });
 
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `aidhaka-chat-${new Date().toISOString().split('T')[0]}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aidhaka-chat-${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch(err => {
+      console.error('Failed to download chat:', err);
+      alert('Failed to download chat history');
+    });
 }
 
 function startNewChat() {
@@ -448,10 +467,8 @@ function startNewChat() {
 function clearChat() {
   if (!confirm('Clear all chat history?')) return;
   
-  fetch(`${API_BASE_URL}/api/chat/clear`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: currentUserId })
+  fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
+    method: 'DELETE'
   }).then(() => {
     startNewChat();
   }).catch(err => {
