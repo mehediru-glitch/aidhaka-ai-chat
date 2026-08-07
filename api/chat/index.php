@@ -74,9 +74,25 @@ try {
         echo json_encode(['success' => true, 'message' => 'Chat saved']);
     } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         try {
-            $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ?');
-            $stmt->execute([$user_id]);
-            $deletedRows = $stmt->rowCount();
+            $input = json_decode(file_get_contents('php://input'), true);
+            $question = $input['question'] ?? null;
+            
+            if ($question) {
+                $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ? AND question = ?');
+                $stmt->execute([$user_id, $question]);
+                $deletedRows = $stmt->rowCount();
+                
+                if ($deletedRows === 0) {
+                    $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ?');
+                    $stmt->execute([$user_id]);
+                    $deletedRows = $stmt->rowCount();
+                }
+            } else {
+                $stmt = $pdo->prepare('DELETE FROM chat_history WHERE user_id = ?');
+                $stmt->execute([$user_id]);
+                $deletedRows = $stmt->rowCount();
+            }
+            
             error_log("DELETE history for user $user_id: rows=$deletedRows");
             echo json_encode(['success' => true, 'message' => 'Chat history cleared', 'deleted_rows' => $deletedRows]);
         } catch (PDOException $deleteErr) {

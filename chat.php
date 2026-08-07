@@ -47,6 +47,9 @@ $userLanguage = $user['language'] ?? 'en';
                     + New Chat
                 </button>
                 <div class="sidebar-section-title" data-i18n="sidebar_history">Chat History</div>
+                <div class="history-header-actions">
+                    <button class="history-clear-btn" onclick="clearAllHistory()" data-i18n="chat_clear">Clear All</button>
+                </div>
                 <div class="history-list" id="history-list">
                     <div class="history-empty" data-i18n="history_empty">No chat history yet</div>
                 </div>
@@ -68,7 +71,6 @@ $userLanguage = $user['language'] ?? 'en';
                 </div>
             </div>
             <div class="sidebar-actions">
-                <button class="btn btn-secondary btn-sm" onclick="downloadChat()" data-i18n="btn_download">Download</button>
                 <a href="/logout.php" class="btn btn-outline btn-sm" data-i18n="btn_logout">Logout</a>
             </div>
         </div>
@@ -127,8 +129,6 @@ $userLanguage = $user['language'] ?? 'en';
             
             <div class="chat-actions">
                 <button class="action-btn" onclick="startNewChat()" data-i18n="chat_new">New Chat</button>
-                <button class="action-btn" onclick="downloadChat()" data-i18n="chat_download">Download</button>
-                <button class="action-btn" onclick="clearChat()" data-i18n="chat_clear">Clear</button>
             </div>
         </div>
     </main>

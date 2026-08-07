@@ -196,22 +196,118 @@ async function loadChatHistory() {
       
       chatHistoryLoaded = true;
       container.scrollTop = container.scrollHeight;
+      loadSidebarHistory(data.history);
     }
   } catch (err) {
     console.error('Failed to load chat history:', err);
   }
 }
 
+function loadSidebarHistory(history) {
+  const historyList = document.getElementById('history-list');
+  if (!historyList || !history || history.length === 0) return;
+
+  try {
+    historyList.innerHTML = '';
+    
+    history.forEach((msg, index) => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      
+      const content = document.createElement('div');
+      content.className = 'history-item-content';
+      
+      const preview = msg.question.length > 40 ? msg.question.substring(0, 40) + '...' : msg.question;
+      content.innerHTML = `
+        <div class="history-question">${escapeHtml(preview)}</div>
+        <div class="history-time">${new Date(msg.created_at).toLocaleString()}</div>
+      `;
+      
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'history-delete-btn';
+      deleteBtn.innerHTML = '🗑️';
+      deleteBtn.title = 'Delete this chat';
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSingleHistory(index, msg.question);
+      });
+      
+      item.appendChild(content);
+      item.appendChild(deleteBtn);
+      
+      item.addEventListener('click', () => {
+        const container = document.getElementById('chat-messages');
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+      
+      historyList.appendChild(item);
+    });
+  } catch (err) {
+    console.error('Failed to load sidebar history:', err);
+  }
+}
+
+async function deleteSingleHistory(index, question) {
+  if (!confirm('Delete this chat?')) return;
+  
+  try {
+    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    
+    if (response.ok) {
+      const historyItem = document.querySelectorAll('.history-item')[index];
+      if (historyItem) {
+        historyItem.remove();
+      }
+      chatHistoryLoaded = false;
+      loadChatHistory();
+    }
+  } catch (err) {
+    console.error('Failed to delete chat:', err);
+  }
+}
+
+async function clearAllHistory() {
+  if (!confirm('Clear all chat history? This cannot be undone.')) return;
+  
+  try {
+    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      startNewChat();
+    }
+  } catch (err) {
+    console.error('Failed to clear chat:', err);
+  }
+}
+
 async function saveToHistoryLocally(question, answer, provider) {
   try {
-    await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
+    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, answer, provider })
     });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      console.error('Failed to save chat history:', response.status, data.error || response.statusText);
+    }
   } catch (err) {
     console.error('Failed to save chat history locally:', err);
   }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 async function sendMessage() {
@@ -319,15 +415,22 @@ function parseMarkdown(text) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+  const codeBlocks = [];
   let match;
-  let codeIndex = 0;
 
   while ((match = codeBlockRegex.exec(html)) !== null) {
-    const lang = match[1] || 'code';
-    const code = match[2].trim();
+    codeBlocks.push({
+      full: match[0],
+      lang: match[1] || 'code',
+      code: match[2].trim()
+    });
+  }
+
+  for (let i = codeBlocks.length - 1; i >= 0; i--) {
+    const { full, lang, code } = codeBlocks[i];
     const escapedCode = code.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-    const placeholder = `<div class="code-block" data-lang="${lang}" data-code-index="${codeIndex}">
+    const placeholder = `<div class="code-block" data-lang="${lang}" data-code-index="${i}">
       <div class="code-header">
         <span class="code-lang">${lang}</span>
         <div class="code-actions">
@@ -339,8 +442,7 @@ function parseMarkdown(text) {
       <pre><code>${escapeHtml(escapedCode)}</code></pre>
       <div class="code-preview" style="display:none;"></div>
     </div>`;
-    html = html.replace(match[0], placeholder);
-    codeIndex++;
+    html = html.replace(full, placeholder);
   }
 
   html = html.replace(/```[\s\S]*?```/g, '');
@@ -357,12 +459,6 @@ function parseMarkdown(text) {
   html = html.replace(/\n/g, '<br>');
 
   return html;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function isPreviewable(lang) {
@@ -476,7 +572,7 @@ function startNewChat() {
   chatHistoryLoaded = false;
 }
 
-function clearChat() {
+function clearAllHistory() {
   if (!confirm('Clear all chat history?')) return;
   
   fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
