@@ -819,6 +819,22 @@ input, textarea, select {
   transition: var(--transition);
 }
 
+.chat-sidebar::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 99;
+}
+
+.chat-sidebar.open::after {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .sidebar-header {
   padding: 20px;
   border-bottom: 1px solid var(--border-color);
@@ -881,6 +897,11 @@ input, textarea, select {
 .history-item:hover {
   background: var(--bg-tertiary);
   border-color: var(--border-color);
+}
+
+.history-item.active {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-primary);
 }
 
 .history-item-content {
@@ -1008,10 +1029,17 @@ input, textarea, select {
 .sidebar-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .sidebar-actions .btn {
   flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Chat Main */
@@ -1026,6 +1054,7 @@ input, textarea, select {
 
 .chat-header {
   padding: 14px 20px;
+  padding-top: max(14px, env(safe-area-inset-top));
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -1337,6 +1366,194 @@ input, textarea, select {
   font-size: 0.9rem;
 }
 
+/* Developer Tools Modal */
+#tools-modal {
+  display: none;
+}
+
+.tools-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tool-tab {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.tool-tab:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.tool-tab.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.tools-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tool-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-form-group label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.tool-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tool-input {
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  transition: var(--transition);
+}
+
+.tool-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
+}
+
+.tool-textarea {
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: 'Courier New', monospace;
+  outline: none;
+  resize: vertical;
+  transition: var(--transition);
+}
+
+.tool-textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
+}
+
+.tool-result {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  min-height: 60px;
+  max-height: 400px;
+  overflow: auto;
+}
+
+.tool-output {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.tool-error {
+  color: var(--error);
+  font-size: 0.9rem;
+}
+
+.tool-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px;
+  font-size: 0.9rem;
+}
+
+.color-palette-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.color-swatch {
+  min-width: 80px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.color-swatch:hover {
+  transform: scale(1.05);
+}
+
+.snippet-item {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+}
+
+.tools-modal-inner {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .tool-form-row {
+    flex-direction: column;
+  }
+  
+  .tool-tab {
+    font-size: 0.75rem;
+    padding: 5px 10px;
+  }
+  
+  .tools-modal-inner {
+    width: 98%;
+    max-height: 95vh;
+  }
+}
+
+@media (max-width: 480px) {
+  .tool-input, .tool-textarea {
+    font-size: 0.85rem;
+  }
+  
+  .tool-output {
+    font-size: 0.8rem;
+  }
+}
+
 .message-text {
   word-wrap: break-word;
 }
@@ -1443,15 +1660,6 @@ input, textarea, select {
   text-align: right;
 }
 
-.message-provider {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 500;
-}
-
 .skeleton {
   background: linear-gradient(90deg, var(--bg-tertiary) 25%, rgba(255,255,255,0.05) 50%, var(--bg-tertiary) 75%);
   background-size: 200% 100%;
@@ -1487,6 +1695,7 @@ input, textarea, select {
 
 .chat-input-container {
   padding: 16px 20px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--border-color);
   background: var(--bg-primary);
   flex-shrink: 0;
@@ -1926,6 +2135,29 @@ input, textarea, select {
   .features-grid {
     grid-template-columns: 1fr;
   }
+
+  .sidebar-actions {
+    flex-direction: column;
+  }
+
+  .sidebar-actions .btn {
+    flex: none;
+    width: 100%;
+  }
+
+  .chat-header {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .chat-header h1 {
+    font-size: 0.9rem;
+  }
+
+  .lang-btn {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1957,20 +2189,25 @@ input, textarea, select {
   }
 
   .chat-header {
-    padding: 12px 16px;
+    padding: 10px 10px;
+    gap: 6px;
+  }
+
+  .chat-header h1 {
+    font-size: 0.85rem;
   }
 
   .chat-input-container {
-    padding: 12px 16px;
+    padding: 10px 10px;
   }
 
   .input-wrapper {
-    padding: 6px;
+    padding: 4px;
   }
 
   .send-btn {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
   .message {
@@ -1978,7 +2215,7 @@ input, textarea, select {
   }
 
   .message-content {
-    padding: 12px 14px;
+    padding: 10px 12px;
     font-size: 0.9rem;
   }
 
@@ -1997,6 +2234,36 @@ input, textarea, select {
 
   .amount-value {
     font-size: 2.5rem;
+  }
+
+  .lang-btn {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+
+  .chat-sidebar {
+    width: 100%;
+  }
+
+  .template-modal-inner {
+    padding: 16px;
+  }
+
+  .template-form-row {
+    flex-direction: column;
+  }
+
+  .template-form-row input {
+    flex: none;
+    width: 100%;
+  }
+}
+
+/* Template modal responsive */
+@media (max-width: 480px) {
+  #template-modal > div {
+    padding: 16px;
+    max-height: 90vh;
   }
 }
 

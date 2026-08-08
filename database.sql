@@ -68,6 +68,30 @@ CREATE TABLE IF NOT EXISTS shared_chats (
     INDEX idx_share_id (share_id)
 );
 
+CREATE TABLE IF NOT EXISTS dev_snippets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    title VARCHAR(150) NOT NULL,
+    language VARCHAR(50) DEFAULT 'text',
+    code TEXT NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_created (user_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS dev_tool_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    tool VARCHAR(50) NOT NULL,
+    input TEXT NOT NULL,
+    output TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_tool (user_id, tool, created_at)
+);
+
 -- For existing databases, run these ALTER statements:
 -- ALTER TABLE chat_history ADD COLUMN session_id INT NULL,
 --   ADD FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,

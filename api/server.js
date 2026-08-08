@@ -1,8 +1,6 @@
 const express = require('express');
-const axios = require('axios');
 const mysql = require('mysql2');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const fs = require('fs');
@@ -14,14 +12,12 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
-// Request ID middleware
 app.use((req, res, next) => {
   req.id = require('crypto').randomUUID();
   res.setHeader('X-Request-ID', req.id);
   next();
 });
 
-// Middleware
 app.use(helmet({ 
   contentSecurityPolicy: false, 
   crossOriginEmbedderPolicy: false,
@@ -37,19 +33,6 @@ app.use(morgan('combined', {
   skip: (req) => req.url.includes('/api/chat') && req.method === 'POST'
 }));
 
-// Rate limiting with error boundary
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-});
-const safeLimiter = (req, res, next) => {
-  try { limiter(req, res, next); } catch (e) { next(); }
-};
-app.use('/api/', safeLimiter);
-
-// Per-user chat rate limiting
 const userRateLimit = new Map();
 const USER_RATE_LIMIT_WINDOW = 60 * 1000;
 const USER_RATE_LIMIT_MAX = 30;
@@ -78,7 +61,6 @@ function checkUserRateLimit(userId) {
   return true;
 }
 
-// Cleanup old rate limit records periodically
 setInterval(() => {
   const now = Date.now();
   for (const [key, record] of userRateLimit.entries()) {
@@ -88,37 +70,11 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// ============================================
-// LOAD CONFIGURATION
-// ============================================
-const KEYS_FILE = process.env.KEYS_FILE || '/home/diamonds/aidhaka.json';
-let API_KEYS = {};
-
-try {
-  if (fs.existsSync(KEYS_FILE)) {
-    API_KEYS = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'));
-  }
-} catch (err) {
-  console.error('Error reading keys file:', err.message);
-}
-
-const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY || API_KEYS.omniroute || '';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || API_KEYS.groq || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || API_KEYS.gemini || '';
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || API_KEYS.deepseek || '';
-const COHERE_API_KEY = process.env.COHERE_API_KEY || API_KEYS.cohere || '';
-const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || API_KEYS.payment || '';
-const BKASH_NUMBER = process.env.BKASH_NUMBER || API_KEYS.bkash || '01552665356';
-
-// Chat cache directory (OUTSIDE web root)
 const CACHE_DIR = process.env.CACHE_DIR || '/home/diamonds/aidhaka-cache';
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 
-// ============================================
-// DATABASE CONNECTION
-// ============================================
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'diamonds_aidhaka',
@@ -129,278 +85,71 @@ const pool = mysql.createPool({
   queueLimit: 0
 }).promise();
 
-// ============================================
-// HEALTH CHECK
-// ============================================
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    success: true, 
-    message: 'Aidhaka AI API is running', 
-    timestamp: new Date().toISOString(),
-    providers: ['pollinations', 'groq', 'gemini', 'deepseek', 'cohere', 'omniroute']
-  });
-});
+const OFFLINE_RESPONSES = {
+  greeting: [
+    "Hello! I'm Aidhaka AI. How can I help you today?",
+    "Hi there! I'm here to assist you. What would you like to know?",
+    "Hey! I'm Aidhaka AI. Ask me anything in English, Bangla, or Hindi.",
+    "Greetings! I'm your AI assistant. How can I help you today?"
+  ],
+  coding: {
+    keywords: ['code', 'function', 'program', 'script', 'html', 'css', 'javascript', 'python', 'java', 'react', 'sql', 'database', 'debug', 'error', 'bug', 'compile', 'syntax', 'class', 'method', 'algorithm', 'git', 'docker', 'server', 'client', 'frontend', 'backend', 'api'],
+    response: "I can help you with coding! Here are some general tips:\n\n1. Always validate your inputs\n2. Use meaningful variable names\n3. Write comments for complex logic\n4. Test your code thoroughly\n\nFor specific code help, please share your code and I'll do my best to assist."
+  },
+  creative: {
+    keywords: ['story', 'poem', 'write', 'creative', 'imagine', 'fiction', 'song', 'joke', 'idea', 'brainstorm'],
+    response: "Here's a creative idea for you:\n\n'In a world where words dance like fireflies,\nIdeas bloom like flowers in spring.\nEvery question is a doorway,\nEvery answer is a new beginning.'\n\nWould you like me to expand on this or create something different?"
+  },
+  help: {
+    keywords: ['help', 'what can you do', 'features', 'capabilities', 'how to use'],
+    response: "I'm Aidhaka AI, your intelligent assistant. Here's what I can help with:\n\n• Answer questions on various topics\n• Help with coding and programming\n• Creative writing and brainstorming\n• General knowledge and explanations\n\nI work offline and provide helpful responses based on your queries. Just ask!"
+  },
+  thanks: {
+    keywords: ['thanks', 'thank you', 'thx', 'appreciate'],
+    response: "You're welcome! I'm glad I could help. Is there anything else you'd like to know?"
+  },
+  goodbye: {
+    keywords: ['bye', 'goodbye', 'see you', 'later', 'exit'],
+    response: "Goodbye! It was nice chatting with you. Come back anytime you need help!"
+  }
+};
 
-// ============================================
-// AI ROUTING
-// ============================================
-
-function routeQuestion(question, apiKeys) {
+function getOfflineResponse(question) {
   const q = question.toLowerCase();
-
-  const codingKeywords = ['code', 'function', 'bug', 'error', 'program', 'script', 'api', 'html', 'css', 'javascript', 'python', 'java', 'react', 'node', 'sql', 'database', 'debug', 'compile', 'syntax', 'class', 'method', 'algorithm', 'git', 'docker', 'server', 'client', 'frontend', 'backend'];
-  const longKeywords = ['explain', 'history', 'compare', 'difference', 'detailed', 'comprehensive', 'essay', 'research', 'analyze', 'analysis', 'report', 'describe', 'list all', 'every', 'complete'];
-  const creativeKeywords = ['story', 'poem', 'write', 'creative', 'imagine', 'fiction', 'song', 'joke', 'idea', 'brainstorm'];
-  const simpleKeywords = ['hi', 'hello', 'hey', 'thanks', 'thank you', 'bye', 'goodbye', 'ok', 'okay', 'yes', 'no'];
-
-  const isCoding = codingKeywords.some(k => q.includes(k));
-  const isLong = longKeywords.some(k => q.includes(k)) || question.length > 200;
-  const isCreative = creativeKeywords.some(k => q.includes(k));
-  const isSimple = simpleKeywords.some(k => q.includes(k)) || question.length < 20;
-
-  if (isCoding && apiKeys.groq) {
-    return {
-      provider: 'groq',
-      call: (q, keys) => callGroq(q, keys.groq),
-      fallback: (q, keys) => [
-        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
-        { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
-        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) },
-        { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) }
-      ]
-    };
-  }
-
-  if (isLong && apiKeys.gemini) {
-    return {
-      provider: 'gemini',
-      call: (q, keys) => callGemini(q, keys.gemini),
-      fallback: (q, keys) => [
-        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
-        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
-        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) },
-        { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) }
-      ]
-    };
-  }
-
-  if (isCreative && apiKeys.gemini) {
-    return {
-      provider: 'gemini',
-      call: (q, keys) => callGemini(q, keys.gemini),
-      fallback: (q, keys) => [
-        { provider: 'pollinations', call: (q2, k2) => callPollinationsAI(q2) },
-        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
-        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) }
-      ]
-    };
-  }
-
-  if (isSimple) {
-    return {
-      provider: 'pollinations',
-      call: (q, keys) => callPollinationsAI(q),
-      fallback: (q, keys) => [
-        { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
-        { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
-        { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) }
-      ]
-    };
-  }
-
-  return {
-    provider: 'pollinations',
-    call: (q, keys) => callPollinationsAI(q),
-    fallback: (q, keys) => [
-      { provider: 'groq', call: (q2, k2) => apiKeys.groq ? callGroq(q2, k2.groq) : Promise.resolve({ success: false }) },
-      { provider: 'gemini', call: (q2, k2) => apiKeys.gemini ? callGemini(q2, k2.gemini) : Promise.resolve({ success: false }) },
-      { provider: 'cohere', call: (q2, k2) => apiKeys.cohere ? callCohere(q2, k2.cohere) : Promise.resolve({ success: false }) },
-      { provider: 'deepseek', call: (q2, k2) => apiKeys.deepseek ? callDeepSeek(q2, k2.deepseek) : Promise.resolve({ success: false }) },
-      { provider: 'omniroute', call: (q2, k2) => apiKeys.omniroute ? callOmniRoute(q2, k2.omniroute) : Promise.resolve({ success: false }) }
-    ]
-  };
-}
-
-// ============================================
-// AI PROVIDERS
-// ============================================
-
-async function callPollinationsAI(question) {
-  const models = ['openai', 'gpt', 'mistral', 'llama'];
-  const maxRetries = 2;
-
-  for (const model of models) {
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await axios.post(
-          'https://text.pollinations.ai/',
-          {
-            messages: [
-              { role: 'user', content: question }
-            ],
-            model: model,
-            temperature: 0.7
-          },
-          { timeout: 12000 }
-        );
-
-        let reply = response.data?.choices?.[0]?.message?.content ||
-                    response.data?.response ||
-                    response.data?.output ||
-                    response.data?.text ||
-                    response.data;
-
-        if (typeof reply === 'object') {
-          reply = JSON.stringify(reply);
-        }
-
-        if (!reply) {
-          reply = 'No response content from AI provider.';
-        }
-
-        return { success: true, reply, provider: 'pollinations' };
-      } catch (err) {
-        const status = err.response?.status;
-        if (status === 402 || status === 429) {
-          continue;
-        }
-        if (attempt < maxRetries) continue;
+  
+  for (const [category, data] of Object.entries(OFFLINE_RESPONSES)) {
+    if (Array.isArray(data)) {
+      if (data.some(r => q.includes(r))) {
+        return {
+          success: true,
+          reply: OFFLINE_RESPONSES.greeting[Math.floor(Math.random() * OFFLINE_RESPONSES.greeting.length)],
+          provider: 'offline'
+        };
+      }
+    } else if (data.keywords) {
+      if (data.keywords.some(k => q.includes(k))) {
+        return {
+          success: true,
+          reply: data.response,
+          provider: 'offline'
+        };
       }
     }
   }
-
-  return { success: false, error: 'Pollinations unavailable', provider: 'pollinations' };
+  
+  const defaultResponses = [
+    "That's an interesting question! Let me think about it...\n\nBased on my knowledge, I can provide some general guidance. Could you tell me more about what you're looking for?",
+    "I'm here to help! While I work offline, I can still provide useful information. What specific aspect would you like me to focus on?",
+    "Great question! I'd love to help with that. Could you provide a bit more context so I can give you the best possible answer?",
+    "Thank you for asking! I'm an offline AI assistant. I can help with general questions, coding tips, creative ideas, and more. What would you like to explore?"
+  ];
+  
+  return {
+    success: true,
+    reply: defaultResponses[Math.floor(Math.random() * defaultResponses.length)],
+    provider: 'offline'
+  };
 }
-
-async function callGroq(question, apiKey) {
-  try {
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
-          { role: 'user', content: question }
-        ],
-        max_tokens: 2000,
-        temperature: 0.7
-      },
-      {
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 60000
-      }
-    );
-
-    const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
-    return { success: true, reply, provider: 'groq' };
-  } catch (err) {
-    return { success: false, error: 'Groq service unavailable', provider: 'groq' };
-  }
-}
-
-async function callGemini(question, apiKey) {
-  try {
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
-      {
-        contents: [
-          {
-            parts: [
-              { text: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
-              { text: question }
-            ]
-          }
-        ]
-      },
-      { timeout: 60000 }
-    );
-
-    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || 
-                  'Sorry, I could not generate a response.';
-    return { success: true, reply, provider: 'gemini' };
-  } catch (err) {
-    return { success: false, error: 'Gemini service unavailable', provider: 'gemini' };
-  }
-}
-
-async function callDeepSeek(question, apiKey) {
-  try {
-    const response = await axios.post(
-      'https://api.deepseek.com/chat/completions',
-      {
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
-          { role: 'user', content: question }
-        ],
-        max_tokens: 2000,
-        temperature: 0.7
-      },
-      {
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 60000
-      }
-    );
-
-    const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
-    return { success: true, reply, provider: 'deepseek' };
-  } catch (err) {
-    return { success: false, error: 'DeepSeek service unavailable', provider: 'deepseek' };
-  }
-}
-
-async function callOmniRoute(question, apiKey) {
-  try {
-    const response = await axios.post(
-      'https://cloud.omniroute.online/v1/chat/completions',
-      {
-        model: 'deepseek/deepseek-chat',
-        messages: [
-          { role: 'system', content: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.' },
-          { role: 'user', content: question }
-        ],
-        max_tokens: 2000,
-        temperature: 0.7
-      },
-      {
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 60000
-      }
-    );
-
-    const reply = response.data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
-    return { success: true, reply, provider: 'omniroute' };
-  } catch (err) {
-    return { success: false, error: 'OmniRoute service unavailable', provider: 'omniroute' };
-  }
-}
-
-async function callCohere(question, apiKey) {
-  try {
-    const response = await axios.post(
-      'https://api.cohere.ai/v1/chat',
-      {
-        model: 'command-r',
-        message: 'You are Aidhaka AI, a helpful coding and general AI assistant. When providing code examples, never use "image.jpg" as an example image source. Use "https://via.placeholder.com/150" instead.\n\nUser: ' + question,
-        max_tokens: 2000,
-        temperature: 0.7
-      },
-      {
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 60000
-      }
-    );
-
-    const reply = response.data?.text || 'Sorry, I could not generate a response.';
-    return { success: true, reply, provider: 'cohere' };
-  } catch (err) {
-    return { success: false, error: 'Cohere service unavailable', provider: 'cohere' };
-  }
-}
-
-// ============================================
-// CHAT HISTORY HELPERS
-// ============================================
 
 async function saveChatToDB(userId, question, answer, provider, isImage = false, shareId = null, sessionId = null) {
   try {
@@ -409,7 +158,15 @@ async function saveChatToDB(userId, question, answer, provider, isImage = false,
       [userId, question, answer, provider || 'unknown', isImage ? 1 : 0, shareId, sessionId]
     );
   } catch (err) {
-    console.error('Save chat error:', err.message);
+    console.error('Save chat error (full columns):', err.message);
+    try {
+      await pool.query(
+        'INSERT INTO chat_history (user_id, question, answer, provider) VALUES (?, ?, ?, ?)',
+        [userId, question, answer, provider || 'unknown']
+      );
+    } catch (fallbackErr) {
+      console.error('Save chat error (fallback):', fallbackErr.message);
+    }
   }
 }
 
@@ -470,9 +227,19 @@ async function addToChatCache(userId, question, answer) {
   }
 }
 
-// ============================================
-// CHAT ENDPOINT - Auto fallback + DB save
-// ============================================
+function generateShareId() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Aidhaka AI API is running', 
+    timestamp: new Date().toISOString(),
+    mode: 'offline'
+  });
+});
+
 app.post('/api/chat', async (req, res) => {
   try {
     const { question, provider, user_id } = req.body;
@@ -485,98 +252,8 @@ app.post('/api/chat', async (req, res) => {
       return res.status(429).json({ success: false, error: 'Too many requests. Please wait a moment.' });
     }
 
-    let apiKeys = {};
-    let keysSource = 'none';
-    try {
-      const keysFile = process.env.KEYS_FILE || '/home/diamonds/aidhaka.json';
-      if (fs.existsSync(keysFile)) {
-        apiKeys = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
-        keysSource = 'file:' + keysFile;
-      }
-    } catch (err) {
-      console.error('Error loading keys file:', err.message);
-    }
-
-    if (!apiKeys.omniroute && process.env.OMNIROUTE_API_KEY) {
-      apiKeys.omniroute = process.env.OMNIROUTE_API_KEY;
-      keysSource += ' env:OMNIROUTE_API_KEY';
-    }
-    if (!apiKeys.groq && process.env.GROQ_API_KEY) {
-      apiKeys.groq = process.env.GROQ_API_KEY;
-      keysSource += ' env:GROQ_API_KEY';
-    }
-    if (!apiKeys.gemini && process.env.GEMINI_API_KEY) {
-      apiKeys.gemini = process.env.GEMINI_API_KEY;
-      keysSource += ' env:GEMINI_API_KEY';
-    }
-    if (!apiKeys.deepseek && process.env.DEEPSEEK_API_KEY) {
-      apiKeys.deepseek = process.env.DEEPSEEK_API_KEY;
-      keysSource += ' env:DEEPSEEK_API_KEY';
-    }
-    if (!apiKeys.cohere && process.env.COHERE_API_KEY) {
-      apiKeys.cohere = process.env.COHERE_API_KEY;
-      keysSource += ' env:COHERE_API_KEY';
-    }
-    if (!apiKeys.payment && process.env.PAYMENT_API_KEY) {
-      apiKeys.payment = process.env.PAYMENT_API_KEY;
-      keysSource += ' env:PAYMENT_API_KEY';
-    }
-    if (!apiKeys.bkash && process.env.BKASH_NUMBER) {
-      apiKeys.bkash = process.env.BKASH_NUMBER;
-      keysSource += ' env:BKASH_NUMBER';
-    }
-
-    console.log('API Keys source:', keysSource);
-
-    let result = null;
-    let usedProvider = '';
-
-    if (provider === 'pollinations') {
-      result = await callPollinationsAI(question);
-      usedProvider = 'pollinations';
-    } else if (provider === 'groq' && apiKeys.groq) {
-      result = await callGroq(question, apiKeys.groq);
-      usedProvider = 'groq';
-    } else if (provider === 'gemini' && apiKeys.gemini) {
-      result = await callGemini(question, apiKeys.gemini);
-      usedProvider = 'gemini';
-    } else if (provider === 'cohere' && apiKeys.cohere) {
-      result = await callCohere(question, apiKeys.cohere);
-      usedProvider = 'cohere';
-    } else if (provider === 'deepseek' && apiKeys.deepseek) {
-      result = await callDeepSeek(question, apiKeys.deepseek);
-      usedProvider = 'deepseek';
-    } else if (provider === 'omniroute' && apiKeys.omniroute) {
-      result = await callOmniRoute(question, apiKeys.omniroute);
-      usedProvider = 'omniroute';
-    } else {
-      const route = routeQuestion(question, apiKeys);
-      usedProvider = route.provider;
-      result = await route.call(question, apiKeys);
-      console.log('Routed to', usedProvider, ':', result.success, result.error || 'ok');
-
-      if (!result.success && route.fallback) {
-        for (const fb of route.fallback(question, apiKeys)) {
-          result = await fb.call(question, apiKeys);
-          usedProvider = fb.provider;
-          console.log('Fallback to', usedProvider, ':', result.success, result.error || 'ok');
-          if (result.success) break;
-        }
-      }
-
-      if (!result.success) {
-        const fallbacks = [
-          "Hello! I'm Aidhaka AI. How can I help you today?",
-          "That's an interesting question! Let me think about it.",
-          "I'm here to help! What would you like to know?",
-          "Great question! I'll do my best to answer.",
-          "Thank you for asking! Let me provide some information."
-        ];
-        const fallbackReply = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-        result = { success: true, reply: fallbackReply + " (Note: Using fallback response.)", provider: 'fallback' };
-        usedProvider = 'fallback';
-      }
-    }
+    const result = getOfflineResponse(question);
+    const usedProvider = 'offline';
 
     if (user_id && result.success) {
       try {
@@ -591,7 +268,6 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    console.log('Response - provider:', usedProvider);
     res.json({ success: true, reply: result.reply, provider: usedProvider });
 
   } catch (err) {
@@ -600,31 +276,6 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// ============================================
-// IMAGE GENERATION ENDPOINT (Pollinations.ai)
-// ============================================
-app.post('/api/generate-image', async (req, res) => {
-  try {
-    const { prompt, width = 1024, height = 1024, model = 'flux' } = req.body;
-
-    if (!prompt || !prompt.trim()) {
-      return res.status(400).json({ success: false, error: 'Please describe the image you want' });
-    }
-
-    const cleanPrompt = prompt.trim().slice(0, 1000);
-    const encodedPrompt = encodeURIComponent(cleanPrompt);
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=${model}&nologo=true`;
-
-    res.json({ success: true, imageUrl, prompt: cleanPrompt });
-  } catch (err) {
-    console.error('Image generation error:', err.message);
-    res.status(500).json({ success: false, error: 'Image generation failed. Please try again.' });
-  }
-});
-
-// ============================================
-// STREAMING CHAT ENDPOINT
-// ============================================
 app.post('/api/chat/stream', async (req, res) => {
   try {
     const { question, user_id } = req.body;
@@ -637,19 +288,11 @@ app.post('/api/chat/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Accel-Buffering', 'no');
 
-    try {
-      const result = await callPollinationsAI(question);
-      
-      if (result.success) {
-        res.write(result.reply);
-        if (user_id) {
-          saveChatToDB(user_id, question, result.reply, result.provider);
-        }
-      } else {
-        res.write(result.error || 'Stream failed');
-      }
-    } catch (err) {
-      res.write('Stream failed. Please try again.');
+    const result = getOfflineResponse(question);
+    
+    res.write(result.reply);
+    if (user_id) {
+      saveChatToDB(user_id, question, result.reply, result.provider);
     }
 
     res.end();
@@ -661,11 +304,10 @@ app.post('/api/chat/stream', async (req, res) => {
   }
 });
 
-// ============================================
-// SHARE CHAT ENDPOINTS
-// ============================================
+app.post('/api/generate-image', async (req, res) => {
+  res.status(503).json({ success: false, error: 'Image generation is currently unavailable in offline mode.' });
+});
 
-// Get chat history
 app.get('/api/chat/history', async (req, res) => {
   try {
     const user_id = req.query.user_id;
@@ -673,10 +315,8 @@ app.get('/api/chat/history', async (req, res) => {
       return res.status(400).json({ success: false, error: 'user_id is required' });
     }
 
-    // Try cache first (faster)
     let history = await getChatCache(parseInt(user_id));
     
-    // If cache empty, load from DB
     if (!history || history.length === 0) {
       history = await getChatHistoryFromDB(parseInt(user_id));
       await setChatCache(parseInt(user_id), history);
@@ -689,7 +329,6 @@ app.get('/api/chat/history', async (req, res) => {
   }
 });
 
-// Clear chat history
 app.post('/api/chat/clear', async (req, res) => {
   try {
     const user_id = req.body.user_id;
@@ -699,7 +338,6 @@ app.post('/api/chat/clear', async (req, res) => {
 
     await clearChatHistoryInDB(parseInt(user_id));
     
-    // Clear cache
     const cacheFile = getCacheFilePath(parseInt(user_id));
     if (fs.existsSync(cacheFile)) {
       fs.unlinkSync(cacheFile);
@@ -712,7 +350,6 @@ app.post('/api/chat/clear', async (req, res) => {
   }
 });
 
-// Export chat as TXT
 app.get('/api/chat/export', async (req, res) => {
   try {
     const user_id = req.query.user_id;
@@ -740,10 +377,6 @@ app.get('/api/chat/export', async (req, res) => {
   }
 });
 
-// ============================================
-// SHARE CHAT ENDPOINTS
-// ============================================
-
 app.post('/api/chat/share', async (req, res) => {
   try {
     const { user_id, message_index } = req.body;
@@ -767,6 +400,7 @@ app.post('/api/chat/share', async (req, res) => {
       [shareId, user_id, JSON.stringify(sharedMessages)]
     );
 
+    const SITE_URL = process.env.SITE_URL || 'https://aidhaka.aiammu.com';
     res.json({ success: true, shareId, url: `${SITE_URL}/shared/${shareId}` });
   } catch (err) {
     console.error('Share error:', err.message);
@@ -793,10 +427,6 @@ app.get('/api/chat/shared/:shareId', async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to load shared chat' });
   }
 });
-
-// ============================================
-// PROMPT TEMPLATES ENDPOINTS
-// ============================================
 
 app.get('/api/templates', async (req, res) => {
   try {
@@ -882,10 +512,6 @@ app.delete('/api/templates/:id', async (req, res) => {
   }
 });
 
-// ============================================
-// CHAT SESSIONS ENDPOINTS
-// ============================================
-
 app.get('/api/sessions', async (req, res) => {
   try {
     const user_id = req.query.user_id;
@@ -963,7 +589,468 @@ app.delete('/api/sessions/:id', async (req, res) => {
   }
 });
 
-// Error handling
+// ============================================
+// DEV TOOLS - Coding Utilities
+// ============================================
+
+app.get('/api/dev-tools/format-code', async (req, res) => {
+  try {
+    const { code, language } = req.query;
+    if (!code) {
+      return res.status(400).json({ success: false, error: 'code is required' });
+    }
+
+    let formatted = code;
+    const lang = (language || 'text').toLowerCase();
+
+    if (['javascript', 'js', 'json', 'css', 'html', 'xml', 'sql', 'python', 'java', 'cpp', 'c', 'php', 'ruby', 'go', 'rust', 'typescript', 'ts'].includes(lang)) {
+      formatted = simpleBeautify(code, lang);
+    }
+
+    res.json({ success: true, formatted, language: lang });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to format code' });
+  }
+});
+
+app.get('/api/dev-tools/format-json', async (req, res) => {
+  try {
+    const { json } = req.query;
+    if (!json) {
+      return res.status(400).json({ success: false, error: 'json is required' });
+    }
+
+    const parsed = JSON.parse(json);
+    const formatted = JSON.stringify(parsed, null, 2);
+    res.json({ success: true, formatted });
+  } catch (err) {
+    res.status(400).json({ success: false, error: 'Invalid JSON: ' + err.message });
+  }
+});
+
+app.get('/api/dev-tools/base64', async (req, res) => {
+  try {
+    const { text, action } = req.query;
+    if (!text) {
+      return res.status(400).json({ success: false, error: 'text is required' });
+    }
+
+    let result;
+    if (action === 'decode') {
+      result = Buffer.from(text, 'base64').toString('utf8');
+    } else {
+      result = Buffer.from(text, 'utf8').toString('base64');
+    }
+
+    res.json({ success: true, result, action: action || 'encode' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: 'Invalid input for base64 operation' });
+  }
+});
+
+app.get('/api/dev-tools/uuid', async (req, res) => {
+  try {
+    const { count = 1, version = 4 } = req.query;
+    const uuids = [];
+    for (let i = 0; i < Math.min(parseInt(count), 100); i++) {
+      uuids.push(require('crypto').randomUUID());
+    }
+    res.json({ success: true, uuids, count: uuids.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to generate UUIDs' });
+  }
+});
+
+app.get('/api/dev-tools/regex-test', async (req, res) => {
+  try {
+    const { pattern, text, flags } = req.query;
+    if (!pattern || text === undefined) {
+      return res.status(400).json({ success: false, error: 'pattern and text are required' });
+    }
+
+    let regex;
+    try {
+      regex = new RegExp(pattern, flags || 'g');
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid regex pattern: ' + e.message });
+    }
+
+    const matches = [];
+    let match;
+    const regexGlobal = new RegExp(pattern, (flags || '') + 'g');
+    while ((match = regexGlobal.exec(text)) !== null) {
+      matches.push({ match: match[0], index: match.index, groups: match.slice(1) });
+    }
+
+    res.json({ success: true, matches, count: matches.length, pattern, flags: flags || '' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to test regex' });
+  }
+});
+
+app.get('/api/dev-tools/color-palette', async (req, res) => {
+  try {
+    const { base, count = 5 } = req.query;
+    const colors = [];
+    const numColors = Math.min(parseInt(count), 20);
+
+    if (base) {
+      const hex = base.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      
+      for (let i = 0; i < numColors; i++) {
+        const factor = 1 - (i / numColors) * 0.7;
+        const nr = Math.round(r * factor);
+        const ng = Math.round(g * factor);
+        const nb = Math.round(b * factor);
+        colors.push('#' + [nr, ng, nb].map(x => x.toString(16).padStart(2, '0')).join(''));
+      }
+    } else {
+      const palettes = [
+        ['#6C63FF', '#5A52D5', '#4A42B5', '#3A3295', '#2A2275'],
+        ['#FF6B6B', '#E85D5D', '#D14F4F', '#BA4141', '#A33333'],
+        ['#00C853', '#00B248', '#009C3E', '#008634', '#00702A'],
+        ['#FFD700', '#E6C200', '#CCAD00', '#B39900', '#998200'],
+        ['#00BCD4', '#00A5B8', '#008E9C', '#007780', '#006064']
+      ];
+      const selected = palettes[Math.floor(Math.random() * palettes.length)];
+      colors.push(...selected.slice(0, numColors));
+    }
+
+    res.json({ success: true, colors, base: base || 'random' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to generate palette' });
+  }
+});
+
+app.get('/api/dev-tools/markdown-preview', async (req, res) => {
+  try {
+    const { markdown } = req.query;
+    if (!markdown) {
+      return res.status(400).json({ success: false, error: 'markdown is required' });
+    }
+
+    let html = markdown
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+    html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>');
+    html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    html = html.replace(/\n/g, '<br>');
+
+    res.json({ success: true, html });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to convert markdown' });
+  }
+});
+
+app.get('/api/dev-tools/env-template', async (req, res) => {
+  try {
+    const { type } = req.query;
+    const templates = {
+      nodejs: `NODE_ENV=development\nPORT=3000\nDB_HOST=localhost\nDB_USER=root\nDB_PASS=password\nDB_NAME=mydb\nJWT_SECRET=your-secret-key\n`,
+      laravel: `APP_NAME=Laravel\nAPP_ENV=local\nAPP_KEY=\nAPP_DEBUG=true\nAPP_URL=http://localhost\n\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=laravel\nDB_USERNAME=root\nDB_PASSWORD=\n`,
+      react: `REACT_APP_API_URL=http://localhost:3000\nREACT_APP_NAME=MyApp\nREACT_APP_VERSION=1.0.0\n`,
+      python: `FLASK_ENV=development\nFLASK_APP=app.py\nSECRET_KEY=your-secret-key\nDATABASE_URL=sqlite:///app.db\n`,
+      general: `APP_NAME=MyApp\nAPP_ENV=development\nAPP_DEBUG=true\nAPP_URL=http://localhost\n\nDB_HOST=localhost\nDB_PORT=3306\nDB_NAME=mydb\nDB_USER=root\nDB_PASS=\n\nCACHE_DRIVER=file\nSESSION_DRIVER=file\nQUEUE_CONNECTION=sync\n`
+    };
+
+    const template = templates[type] || templates.general;
+    res.json({ success: true, template, type: type || 'general' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to generate template' });
+  }
+});
+
+app.get('/api/dev-tools/sql-format', async (req, res) => {
+  try {
+    const { sql } = req.query;
+    if (!sql) {
+      return res.status(400).json({ success: false, error: 'sql is required' });
+    }
+
+    const keywords = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'ON', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'INDEX', 'UNION', 'DISTINCT', 'AS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'IN', 'NOT', 'NULL', 'IS', 'BETWEEN', 'LIKE', 'EXISTS', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
+    
+    let formatted = sql;
+    keywords.forEach(keyword => {
+      const regex = new RegExp('\\b' + keyword + '\\b', 'gi');
+      formatted = formatted.replace(regex, '\n' + keyword);
+    });
+
+    formatted = formatted.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
+    
+    res.json({ success: true, formatted });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to format SQL' });
+  }
+});
+
+app.get('/api/dev-tools/lorem-ipsum', async (req, res) => {
+  try {
+    const { count = 3, type = 'paragraph' } = req.query;
+    const num = Math.min(parseInt(count), 20);
+
+    const words = ['lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit', 'sed', 'do', 'eiusmod', 'tempor', 'incididunt', 'ut', 'labore', 'et', 'dolore', 'magna', 'aliqua', 'enim', 'ad', 'minim', 'veniam', 'quis', 'nostrud', 'exercitation', 'ullamco', 'laboris', 'nisi', 'aliquip', 'ex', 'ea', 'commodo', 'consequat', 'duis', 'aute', 'irure', 'in', 'reprehenderit', 'voluptate', 'velit', 'esse', 'cillum', 'fugiat', 'nulla', 'pariatur', 'excepteur', 'sint', 'occaecat', 'cupidatat', 'non', 'proident', 'sunt', 'culpa', 'qui', 'officia', 'deserunt', 'mollit', 'anim', 'id', 'est', 'laborum'];
+
+    const generateSentence = () => {
+      const len = 5 + Math.floor(Math.random() * 10);
+      const sentence = [];
+      for (let i = 0; i < len; i++) {
+        sentence.push(words[Math.floor(Math.random() * words.length)]);
+      }
+      return sentence.join(' ') + '.';
+    };
+
+    const generateParagraph = () => {
+      const len = 4 + Math.floor(Math.random() * 4);
+      const para = [];
+      for (let i = 0; i < len; i++) {
+        para.push(generateSentence());
+      }
+      return para.join(' ');
+    };
+
+    let result = [];
+    if (type === 'sentence') {
+      for (let i = 0; i < num; i++) result.push(generateSentence());
+    } else if (type === 'word') {
+      for (let i = 0; i < num; i++) result.push(words[Math.floor(Math.random() * words.length)]);
+    } else {
+      for (let i = 0; i < num; i++) result.push(generateParagraph());
+    }
+
+    res.json({ success: true, result: result.join('\n\n'), type, count: num });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to generate lorem ipsum' });
+  }
+});
+
+app.get('/api/dev-tools/cron-generator', async (req, res) => {
+  try {
+    const { minute = '*', hour = '*', day = '*', month = '*', weekday = '*' } = req.query;
+    const expression = `${minute} ${hour} ${day} ${month} ${weekday}`;
+    
+    const descriptions = [];
+    if (minute !== '*') descriptions.push(`at minute ${minute}`);
+    if (hour !== '*') descriptions.push(`at ${hour}:00`);
+    if (day !== '*') descriptions.push(`on day ${day} of month`);
+    if (month !== '*') descriptions.push(`in month ${month}`);
+    if (weekday !== '*') descriptions.push(`on weekday ${weekday}`);
+
+    res.json({ 
+      success: true, 
+      expression, 
+      description: descriptions.length > 0 ? 'Runs ' + descriptions.join(', ') : 'Runs every minute'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to generate cron expression' });
+  }
+});
+
+app.get('/api/dev-tools/text-diff', async (req, res) => {
+  try {
+    const { text1, text2 } = req.query;
+    if (!text1 || text2 === undefined) {
+      return res.status(400).json({ success: false, error: 'text1 and text2 are required' });
+    }
+
+    const lines1 = text1.split('\n');
+    const lines2 = text2.split('\n');
+    const maxLines = Math.max(lines1.length, lines2.length);
+    
+    const diff = [];
+    for (let i = 0; i < maxLines; i++) {
+      const line1 = lines1[i] || '';
+      const line2 = lines2[i] || '';
+      if (line1 !== line2) {
+        diff.push({
+          line: i + 1,
+          original: line1,
+          modified: line2,
+          changed: true
+        });
+      } else {
+        diff.push({
+          line: i + 1,
+          original: line1,
+          modified: line2,
+          changed: false
+        });
+      }
+    }
+
+    res.json({ success: true, diff, changes: diff.filter(d => d.changed).length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to compare texts' });
+  }
+});
+
+app.post('/api/dev-tools/snippets', async (req, res) => {
+  try {
+    const { user_id, title, language, code, description } = req.body;
+    if (!user_id || !title || !code) {
+      return res.status(400).json({ success: false, error: 'user_id, title, and code are required' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO dev_snippets (user_id, title, language, code, description) VALUES (?, ?, ?, ?, ?)',
+      [user_id, title, language || 'text', code, description || '']
+    );
+
+    res.json({ success: true, id: result.insertId, title, language: language || 'text' });
+  } catch (err) {
+    console.error('Save snippet error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to save snippet' });
+  }
+});
+
+app.get('/api/dev-tools/snippets', async (req, res) => {
+  try {
+    const user_id = req.query.user_id;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const [rows] = await pool.query(
+      'SELECT id, title, language, description, created_at FROM dev_snippets WHERE user_id = ? ORDER BY created_at DESC',
+      [user_id]
+    );
+
+    res.json({ success: true, snippets: rows });
+  } catch (err) {
+    console.error('Get snippets error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load snippets' });
+  }
+});
+
+app.get('/api/dev-tools/snippets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user_id = req.query.user_id;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const [rows] = await pool.query(
+      'SELECT id, title, language, code, description, created_at FROM dev_snippets WHERE id = ? AND user_id = ?',
+      [id, user_id]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Snippet not found' });
+    }
+
+    res.json({ success: true, snippet: rows[0] });
+  } catch (err) {
+    console.error('Get snippet error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load snippet' });
+  }
+});
+
+app.delete('/api/dev-tools/snippets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id } = req.body;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    await pool.query('DELETE FROM dev_snippets WHERE id = ? AND user_id = ?', [id, user_id]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete snippet error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to delete snippet' });
+  }
+});
+
+app.post('/api/dev-tools/history', async (req, res) => {
+  try {
+    const { user_id, tool, input, output } = req.body;
+    if (!user_id || !tool || !input || !output) {
+      return res.status(400).json({ success: false, error: 'user_id, tool, input, and output are required' });
+    }
+
+    await pool.query(
+      'INSERT INTO dev_tool_history (user_id, tool, input, output) VALUES (?, ?, ?, ?)',
+      [user_id, tool, input, output]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Save tool history error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to save history' });
+  }
+});
+
+app.get('/api/dev-tools/history', async (req, res) => {
+  try {
+    const user_id = req.query.user_id;
+    const tool = req.query.tool;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    let query = 'SELECT id, tool, input, output, created_at FROM dev_tool_history WHERE user_id = ?';
+    const params = [user_id];
+    
+    if (tool) {
+      query += ' AND tool = ?';
+      params.push(tool);
+    }
+    
+    query += ' ORDER BY created_at DESC LIMIT 50';
+
+    const [rows] = await pool.query(query, params);
+
+    res.json({ success: true, history: rows });
+  } catch (err) {
+    console.error('Get tool history error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load history' });
+  }
+});
+
+function simpleBeautify(code, language) {
+  let indent = 0;
+  const indentStr = '  ';
+  let result = '';
+  const lines = code.split('\n');
+  
+  const openers = ['{', '(', '['];
+  const closers = ['}', ')', ']'];
+  
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+    
+    if (closers.some(c => line.startsWith(c))) {
+      indent = Math.max(0, indent - 1);
+    }
+    
+    result += indentStr.repeat(indent) + line + '\n';
+    
+    if (openers.some(o => line.endsWith(o))) {
+      indent++;
+    }
+  }
+  
+  return result.trim();
+}
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: 'Internal server error' });

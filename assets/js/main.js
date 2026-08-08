@@ -233,11 +233,7 @@ async function loadSessionMessages(sessionId) {
       
       data.history.forEach(msg => {
         appendMessage('user', msg.question, false);
-        if (msg.is_image) {
-          appendImageMessage(msg.answer, msg.question, false);
-        } else {
-          appendMessage('assistant', msg.answer, false, msg.provider);
-        }
+        appendMessage('assistant', msg.answer, false);
       });
       
       chatHistoryLoaded = true;
@@ -440,43 +436,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function isImageRequest(text) {
-  const lower = text.toLowerCase();
-  const imagePhrases = [
-    'generate image', 'create image', 'make image', 'draw image',
-    'generate a image', 'create a image', 'make a image', 'draw a image',
-    'generate an image', 'create an image', 'make an image', 'draw an image',
-    'generate picture', 'create picture', 'make picture', 'draw picture',
-    'generate a picture', 'create a picture', 'make a picture', 'draw a picture',
-    'generate photo', 'create photo', 'make photo', 'draw photo',
-    'generate a photo', 'create a photo', 'make a photo', 'draw a photo',
-    'generate illustration', 'create illustration', 'make illustration',
-    'generate art', 'create art', 'make art',
-    'draw a', 'draw me', 'draw for me',
-    'image of', 'picture of', 'photo of', 'illustration of', 'painting of', 'artwork of',
-    'text to image', 'txt2img',
-    'show me an image', 'show me a picture', 'show me an picture',
-    'i want an image', 'i want a picture', 'i want a photo',
-    'make me an image', 'make me a picture', 'make me a photo',
-    'generate for me', 'create for me', 'make for me'
-  ];
-  
-  if (imagePhrases.some(phrase => lower.includes(phrase))) {
-    return true;
-  }
-  
-  const hasImageWord = ['image', 'picture', 'photo', 'illustration', 'painting', 'artwork', 'drawing', 'sketch', 'portrait', 'landscape'].some(w => lower.includes(w));
-  const hasActionWord = ['generate', 'create', 'make', 'draw', 'render'].some(w => lower.includes(w));
-  
-  if (hasImageWord && hasActionWord) {
-    const codeWords = ['code', 'program', 'function', 'app', 'website', 'database', 'api', 'html', 'css', 'javascript', 'python', 'java', 'react', 'sql', 'bug', 'error', 'fix'];
-    const hasCodeContext = codeWords.some(w => lower.includes(w));
-    if (!hasCodeContext) return true;
-  }
-  
-  return false;
-}
-
 async function sendMessage(retryMessage = null) {
   const textarea = document.getElementById('chat-input');
   const sendBtn = document.getElementById('send-btn');
@@ -503,130 +462,11 @@ async function sendMessage(retryMessage = null) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-    if (isImageRequest(message)) {
-      clearTimeout(timeoutId);
-      removeSkeletonLoading();
-      
-      appendMessage('assistant', 'Generating image...', true, 'pollinations');
-      isChatLoading = false;
-      sendBtn.disabled = false;
-      
-      try {
-        const imgRes = await fetch(`${API_BASE_URL}/api/generate-image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: message, user_id: currentUserId })
-        });
-        const imgData = await imgRes.json();
-        
-        if (imgData.success && imgData.imageUrl) {
-          lastGeneratedImageUrl = imgData.imageUrl;
-          appendImageMessage(imgData.imageUrl, message);
-          saveToHistoryLocally(message, imgData.imageUrl, 'image', true);
-        } else {
-          appendMessage('assistant', imgData.error || t('chat_error'), true, null, true);
-        }
-      } catch (imgErr) {
-        appendMessage('assistant', t('chat_network_error'), true, null, true);
-      }
-      
-      textarea.focus();
-      return;
-    }
-
-    if (isImageEditRequest(message)) {
-      clearTimeout(timeoutId);
-      removeSkeletonLoading();
-      
-      appendMessage('user', message);
-      await handleImageEdit(message);
-      
-      textarea.focus();
-      return;
-    }
-
-    const useStreaming = message.length > 100;
-    const endpoint = useStreaming ? '/api/chat/stream' : '/api/chat';
-    
-    if (useStreaming) {
-      clearTimeout(timeoutId);
-      removeSkeletonLoading();
-      
-      appendMessage('user', message);
-      const streamingMsg = await appendStreamingMessage('', 'pollinations');
-      
-      try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            question: message,
-            language: currentLang,
-            user_id: currentUserId
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          fullText += chunk;
-          if (streamingMsg) {
-            const textEl = streamingMsg.querySelector('.streaming-text');
-            if (textEl) {
-              textEl.innerHTML = parseMarkdown(fullText);
-              container.scrollTop = container.scrollHeight;
-            }
-          }
-        }
-        
-        if (streamingMsg) {
-          streamingMsg.classList.remove('streaming');
-          const textEl = streamingMsg.querySelector('.streaming-text');
-          if (textEl) textEl.classList.remove('streaming-text');
-        }
-        
-        chatHistoryLoaded = true;
-        lastFailedMessage = '';
-        playNotificationSound();
-        saveToHistoryLocally(message, fullText, 'pollinations');
-      } catch (err) {
-        if (streamingMsg) {
-          streamingMsg.remove();
-        }
-        if (err.name === 'AbortError') {
-          appendMessage('assistant', 'Request timed out. Please try again.');
-        } else {
-          lastFailedMessage = message;
-          appendMessage('assistant', t('chat_network_error'), true, null, true);
-        }
-      } finally {
-        isChatLoading = false;
-        sendBtn.disabled = false;
-        textarea.focus();
-      }
-      
-      return;
-    }
-
     const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         question: message,
-        language: currentLang,
         user_id: currentUserId
       }),
       signal: controller.signal
@@ -638,12 +478,12 @@ async function sendMessage(retryMessage = null) {
     removeSkeletonLoading();
 
     if (data.reply) {
-      appendMessage('assistant', data.reply, true, data.provider);
+      appendMessage('assistant', data.reply, true);
       chatHistoryLoaded = true;
       lastFailedMessage = '';
       playNotificationSound();
       
-      saveToHistoryLocally(message, data.reply, data.provider || 'unknown');
+      saveToHistoryLocally(message, data.reply, data.provider || 'offline');
     } else {
       lastFailedMessage = message;
       appendMessage('assistant', data.error || t('chat_error'), true, null, true);
@@ -685,7 +525,7 @@ function removeSkeletonLoading() {
   if (skeleton) skeleton.remove();
 }
 
-function appendMessage(role, content, animate = true, provider = null, isError = false) {
+function appendMessage(role, content, animate = true, isError = false) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
 
@@ -700,13 +540,6 @@ function appendMessage(role, content, animate = true, provider = null, isError =
 
   const messageContent = document.createElement('div');
   messageContent.className = 'message-content';
-
-  if (role === 'assistant' && provider) {
-    const providerBadge = document.createElement('div');
-    providerBadge.className = 'message-provider';
-    providerBadge.textContent = provider;
-    messageContent.appendChild(providerBadge);
-  }
 
   const messageText = document.createElement('div');
   messageText.className = 'message-text';
@@ -730,61 +563,6 @@ function appendMessage(role, content, animate = true, provider = null, isError =
   container.appendChild(messageDiv);
 
   container.scrollTop = container.scrollHeight;
-}
-
-async function appendStreamingMessage(content, provider = null, isError = false) {
-  const container = document.getElementById('chat-messages');
-  if (!container) return;
-
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'message message-assistant streaming';
-  if (isError) messageDiv.classList.add('message-error');
-
-  const avatar = document.createElement('div');
-  avatar.className = 'message-avatar';
-  avatar.textContent = 'AI';
-
-  const messageContent = document.createElement('div');
-  messageContent.className = 'message-content';
-
-  if (provider) {
-    const providerBadge = document.createElement('div');
-    providerBadge.className = 'message-provider';
-    providerBadge.textContent = provider;
-    messageContent.appendChild(providerBadge);
-  }
-
-  const messageText = document.createElement('div');
-  messageText.className = 'message-text streaming-text';
-  messageContent.appendChild(messageText);
-
-  if (isError) {
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'retry-btn';
-    retryBtn.textContent = '🔄 Retry';
-    retryBtn.addEventListener('click', () => {
-      retryBtn.remove();
-      sendMessage(lastFailedMessage);
-    });
-    messageContent.appendChild(retryBtn);
-  }
-
-  messageDiv.appendChild(avatar);
-  messageDiv.appendChild(messageContent);
-  container.appendChild(messageDiv);
-
-  const words = content.split(' ');
-  let currentText = '';
-  
-  for (let i = 0; i < words.length; i++) {
-    currentText += (i > 0 ? ' ' : '') + words[i];
-    messageText.innerHTML = parseMarkdown(currentText);
-    container.scrollTop = container.scrollHeight;
-    await new Promise(r => setTimeout(r, 20 + Math.random() * 30));
-  }
-
-  messageDiv.classList.remove('streaming');
-  return messageDiv;
 }
 
 async function shareChat() {
@@ -899,127 +677,6 @@ function toggleTemplateModal() {
       loadPromptTemplates();
     }
   }
-}
-
-function isImageEditRequest(text) {
-  const lower = text.toLowerCase();
-  const editPhrases = [
-    'change', 'edit', 'modify', 'update', 'replace', 'remove', 'add',
-    'make the', 'change the', 'edit the', 'replace the',
-    'different', 'another', 'new', 'instead',
-    'red sky', 'blue sky', 'green sky',
-    'different color', 'different background',
-    'with a', 'without a', 'add a', 'remove a'
-  ];
-  
-  const imageWords = ['image', 'picture', 'photo', 'illustration', 'painting', 'artwork', 'drawing', 'generated', 'created'];
-  
-  if (editPhrases.some(p => lower.includes(p)) && lastGeneratedImageUrl !== null) {
-    const hasImageContext = imageWords.some(w => lower.includes(w));
-    const hasActionContext = ['generate', 'create', 'make', 'draw', 'render', 'show'].some(w => lower.includes(w));
-    
-    if (hasImageContext || hasActionContext) return true;
-    
-    const codeWords = ['code', 'program', 'function', 'app', 'website', 'database', 'api', 'html', 'css', 'javascript', 'python', 'java', 'react', 'sql', 'bug', 'error', 'fix', 'password', 'profile', 'account', 'name', 'email'];
-    const hasCodeContext = codeWords.some(w => lower.includes(w));
-    
-    if (!hasCodeContext) return true;
-  }
-  return false;
-}
-
-let lastGeneratedImageUrl = null;
-
-async function handleImageEdit(prompt) {
-  if (!lastGeneratedImageUrl) {
-    appendMessage('assistant', 'No previous image to edit. Please generate an image first.', true, null, true);
-    return;
-  }
-  
-  appendMessage('assistant', 'Editing image...', true, 'pollinations');
-  
-  try {
-    const encodedPrompt = encodeURIComponent(prompt);
-    const editedImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&image=${encodeURIComponent(lastGeneratedImageUrl)}`;
-    
-    lastGeneratedImageUrl = editedImageUrl;
-    appendImageMessage(editedImageUrl, prompt);
-    saveToHistoryLocally(prompt, editedImageUrl, 'image-edit', true);
-  } catch (err) {
-    appendMessage('assistant', t('chat_image_error'), true, null, true);
-  }
-}
-
-function appendImageMessage(imageUrl, prompt, animate = true) {
-  const container = document.getElementById('chat-messages');
-  if (!container) return;
-
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'message message-assistant';
-  if (!animate) messageDiv.style.animation = 'none';
-
-  const avatar = document.createElement('div');
-  avatar.className = 'message-avatar';
-  avatar.textContent = 'AI';
-
-  const messageContent = document.createElement('div');
-  messageContent.className = 'message-content';
-
-  const providerBadge = document.createElement('div');
-  providerBadge.className = 'message-provider';
-  providerBadge.textContent = 'image';
-  messageContent.appendChild(providerBadge);
-
-  const imageWrapper = document.createElement('div');
-  imageWrapper.className = 'generated-image-wrapper';
-  
-  const img = document.createElement('img');
-  img.src = imageUrl;
-  img.alt = prompt || 'AI generated image';
-  img.className = 'generated-image';
-  img.loading = 'lazy';
-  
-  imageWrapper.appendChild(img);
-  messageContent.appendChild(imageWrapper);
-
-  const imageCaption = document.createElement('div');
-  imageCaption.className = 'message-text';
-  imageCaption.innerHTML = parseMarkdown(prompt || '');
-  messageContent.appendChild(imageCaption);
-
-  const imageActions = document.createElement('div');
-  imageActions.className = 'image-actions';
-  
-  const downloadBtn = document.createElement('button');
-  downloadBtn.className = 'image-btn';
-  downloadBtn.textContent = '⬇ Download';
-  downloadBtn.addEventListener('click', () => {
-    const a = document.createElement('a');
-    a.href = imageUrl;
-    a.download = 'aidhaka-image-' + Date.now() + '.png';
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  });
-  
-  const openBtn = document.createElement('button');
-  openBtn.className = 'image-btn';
-  openBtn.textContent = '🔗 Open';
-  openBtn.addEventListener('click', () => {
-    window.open(imageUrl, '_blank');
-  });
-  
-  imageActions.appendChild(downloadBtn);
-  imageActions.appendChild(openBtn);
-  messageContent.appendChild(imageActions);
-
-  messageDiv.appendChild(avatar);
-  messageDiv.appendChild(messageContent);
-  container.appendChild(messageDiv);
-
-  container.scrollTop = container.scrollHeight;
 }
 
 function parseMarkdown(text) {
@@ -1262,6 +919,508 @@ function checkPasswordStrength(password) {
     bar.classList.add('medium');
   } else {
     bar.classList.add('strong');
+  }
+}
+
+// ============================================
+// Developer Tools
+// ============================================
+
+let currentTool = 'format-code';
+
+function toggleToolsModal() {
+  const modal = document.getElementById('tools-modal');
+  if (modal) {
+    modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+    if (modal.style.display === 'flex') {
+      renderToolPanel(currentTool);
+    }
+  }
+}
+
+function switchTool(tool) {
+  currentTool = tool;
+  
+  document.querySelectorAll('.tool-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.tool === tool);
+  });
+  
+  renderToolPanel(tool);
+}
+
+function renderToolPanel(tool) {
+  const container = document.getElementById('tools-content');
+  if (!container) return;
+
+  let html = '';
+  
+  switch(tool) {
+    case 'format-code':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Language</label>
+            <select id="tool-lang" class="tool-input">
+              <option value="javascript">JavaScript</option>
+              <option value="json">JSON</option>
+              <option value="css">CSS</option>
+              <option value="html">HTML</option>
+              <option value="sql">SQL</option>
+              <option value="python">Python</option>
+              <option value="java">Java</option>
+              <option value="php">PHP</option>
+              <option value="text">Plain Text</option>
+            </select>
+          </div>
+          <div class="tool-form-group">
+            <label>Code</label>
+            <textarea id="tool-input" class="tool-textarea" rows="10" placeholder="Paste your code here..."></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runFormatCode()">Format Code</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'format-json':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>JSON Input</label>
+            <textarea id="tool-input" class="tool-textarea" rows="10" placeholder='{"key": "value"}'></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runFormatJson()">Format JSON</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'base64':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Action</label>
+            <select id="tool-action" class="tool-input">
+              <option value="encode">Encode to Base64</option>
+              <option value="decode">Decode from Base64</option>
+            </select>
+          </div>
+          <div class="tool-form-group">
+            <label>Input Text</label>
+            <textarea id="tool-input" class="tool-textarea" rows="5" placeholder="Enter text to encode/decode..."></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runBase64()">Process</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'uuid':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Count</label>
+            <input type="number" id="tool-count" class="tool-input" value="5" min="1" max="100">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runUuid()">Generate UUIDs</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'regex-test':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Pattern</label>
+            <input type="text" id="tool-pattern" class="tool-input" placeholder="e.g. [a-z]+@[a-z]+\\.[a-z]+">
+          </div>
+          <div class="tool-form-group">
+            <label>Test String</label>
+            <textarea id="tool-input" class="tool-textarea" rows="3" placeholder="Text to test against..."></textarea>
+          </div>
+          <div class="tool-form-group">
+            <label>Flags</label>
+            <input type="text" id="tool-flags" class="tool-input" value="g" placeholder="g, i, m, etc.">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runRegexTest()">Test Regex</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'color-palette':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Base Color (optional)</label>
+            <input type="text" id="tool-base" class="tool-input" placeholder="#6C63FF or leave empty for random">
+          </div>
+          <div class="tool-form-group">
+            <label>Count</label>
+            <input type="number" id="tool-count" class="tool-input" value="5" min="2" max="20">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runColorPalette()">Generate Palette</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'markdown-preview':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Markdown</label>
+            <textarea id="tool-input" class="tool-textarea" rows="10" placeholder="# Heading\n\n**bold** *italic* \`code\`\n\n- list item"></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runMarkdownPreview()">Preview</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'env-template':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Type</label>
+            <select id="tool-type" class="tool-input">
+              <option value="general">General</option>
+              <option value="nodejs">Node.js</option>
+              <option value="laravel">Laravel</option>
+              <option value="react">React</option>
+              <option value="python">Python/Flask</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runEnvTemplate()">Generate Template</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'sql-format':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>SQL Query</label>
+            <textarea id="tool-input" class="tool-textarea" rows="8" placeholder="SELECT * FROM users WHERE id=1"></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runSqlFormat()">Format SQL</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'lorem-ipsum':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Type</label>
+            <select id="tool-type" class="tool-input">
+              <option value="paragraph">Paragraphs</option>
+              <option value="sentence">Sentences</option>
+              <option value="word">Words</option>
+            </select>
+          </div>
+          <div class="tool-form-group">
+            <label>Count</label>
+            <input type="number" id="tool-count" class="tool-input" value="3" min="1" max="20">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runLoremIpsum()">Generate</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'cron-generator':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-row">
+            <div class="tool-form-group">
+              <label>Minute</label>
+              <input type="text" id="tool-minute" class="tool-input" value="*">
+            </div>
+            <div class="tool-form-group">
+              <label>Hour</label>
+              <input type="text" id="tool-hour" class="tool-input" value="*">
+            </div>
+            <div class="tool-form-group">
+              <label>Day</label>
+              <input type="text" id="tool-day" class="tool-input" value="*">
+            </div>
+            <div class="tool-form-group">
+              <label>Month</label>
+              <input type="text" id="tool-month" class="tool-input" value="*">
+            </div>
+            <div class="tool-form-group">
+              <label>Weekday</label>
+              <input type="text" id="tool-weekday" class="tool-input" value="*">
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runCronGenerator()">Generate Cron</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'text-diff':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-group">
+            <label>Original Text</label>
+            <textarea id="tool-text1" class="tool-textarea" rows="6" placeholder="Original text..."></textarea>
+          </div>
+          <div class="tool-form-group">
+            <label>Modified Text</label>
+            <textarea id="tool-text2" class="tool-textarea" rows="6" placeholder="Modified text..."></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runTextDiff()">Compare</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+      
+    case 'snippets':
+      html = `
+        <div class="tool-panel">
+          <div class="tool-form-row">
+            <input type="text" id="snippet-title" class="tool-input" placeholder="Snippet title" style="flex:1;">
+            <input type="text" id="snippet-lang" class="tool-input" placeholder="Language" style="flex:1;">
+            <button class="btn btn-primary btn-sm" onclick="saveSnippet()">Save</button>
+          </div>
+          <textarea id="snippet-code" class="tool-textarea" rows="6" placeholder="Paste your code snippet here..." style="margin:8px 0;"></textarea>
+          <input type="text" id="snippet-desc" class="tool-input" placeholder="Description (optional)" style="margin-bottom:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadSnippets()" style="margin-bottom:12px;">Load My Snippets</button>
+          <div id="tool-result" class="tool-result"></div>
+        </div>
+      `;
+      break;
+  }
+  
+  container.innerHTML = html;
+}
+
+async function runDevTool(tool, params) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/dev-tools/${tool}?${new URLSearchParams(params)}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      const resultEl = document.getElementById('tool-result');
+      if (resultEl) {
+        if (data.formatted) {
+          resultEl.innerHTML = `<pre class="tool-output">${escapeHtml(data.formatted)}</pre>`;
+        } else if (data.html) {
+          resultEl.innerHTML = `<div class="tool-output markdown-preview">${data.html}</div>`;
+        } else if (data.result) {
+          resultEl.innerHTML = `<pre class="tool-output">${escapeHtml(data.result)}</pre>`;
+        } else if (data.template) {
+          resultEl.innerHTML = `<pre class="tool-output">${escapeHtml(data.template)}</pre>`;
+        } else if (data.uuids) {
+          resultEl.innerHTML = `<pre class="tool-output">${data.uuids.join('\n')}</pre>`;
+        } else if (data.colors) {
+          resultEl.innerHTML = `<div class="tool-output color-palette-result">${data.colors.map(c => `<div class="color-swatch" style="background:${c};color:${isLightColor(c)?'#000':'#fff'};padding:8px 12px;border-radius:6px;margin:4px;display:inline-block;font-family:monospace;">${c}</div>`).join('')}</div>`;
+        } else if (data.matches) {
+          resultEl.innerHTML = `<pre class="tool-output">Matches: ${data.count}\n${data.matches.map(m => `Line ${m.index + 1}: ${m.match}`).join('\n')}</pre>`;
+        } else if (data.diff) {
+          resultEl.innerHTML = `<pre class="tool-output">Changes: ${data.changes}\n${data.diff.map(d => `Line ${d.line}: ${d.changed ? 'CHANGED' : 'same'}\n  Original: ${d.original}\n  Modified: ${d.modified}`).join('\n\n')}</pre>`;
+        } else if (data.expression) {
+          resultEl.innerHTML = `<pre class="tool-output">Expression: ${data.expression}\nDescription: ${data.description}</pre>`;
+        } else if (data.snippets) {
+          resultEl.innerHTML = data.snippets.map(s => `<div class="snippet-item"><strong>${escapeHtml(s.title)}</strong> <span style="color:var(--text-muted);font-size:0.8rem;">${s.language}</span><pre style="margin-top:4px;max-height:120px;overflow:auto;">${escapeHtml(s.description || '')}</pre></div>`).join('');
+        } else if (data.snippet) {
+          resultEl.innerHTML = `<pre class="tool-output">${escapeHtml(data.snippet.code)}</pre>`;
+        } else if (data.history) {
+          resultEl.innerHTML = data.history.map(h => `<div class="history-item" style="padding:8px;border-bottom:1px solid var(--border-color);"><strong>${escapeHtml(h.tool)}</strong> <span style="color:var(--text-muted);font-size:0.75rem;">${new Date(h.created_at).toLocaleString()}</span><pre style="margin-top:4px;font-size:0.85rem;">${escapeHtml(h.input.substring(0, 100))}</pre></div>`).join('');
+        } else {
+          resultEl.innerHTML = `<pre class="tool-output">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+        }
+      }
+      
+      if (tool !== 'snippets' && tool !== 'history') {
+        saveToolHistory(tool, JSON.stringify(params), JSON.stringify(data));
+      }
+    } else {
+      const resultEl = document.getElementById('tool-result');
+      if (resultEl) {
+        resultEl.innerHTML = `<div class="tool-error">${escapeHtml(data.error || 'Operation failed')}</div>`;
+      }
+    }
+  } catch (err) {
+    const resultEl = document.getElementById('tool-result');
+    if (resultEl) {
+      resultEl.innerHTML = `<div class="tool-error">Network error: ${err.message}</div>`;
+    }
+  }
+}
+
+function isLightColor(hex) {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+}
+
+async function runFormatCode() {
+  const code = document.getElementById('tool-input')?.value;
+  const lang = document.getElementById('tool-lang')?.value;
+  if (!code) return;
+  await runDevTool('format-code', { code, language: lang });
+}
+
+async function runFormatJson() {
+  const json = document.getElementById('tool-input')?.value;
+  if (!json) return;
+  await runDevTool('format-json', { json });
+}
+
+async function runBase64() {
+  const text = document.getElementById('tool-input')?.value;
+  const action = document.getElementById('tool-action')?.value;
+  if (!text) return;
+  await runDevTool('base64', { text, action });
+}
+
+async function runUuid() {
+  const count = document.getElementById('tool-count')?.value || 1;
+  await runDevTool('uuid', { count });
+}
+
+async function runRegexTest() {
+  const pattern = document.getElementById('tool-pattern')?.value;
+  const text = document.getElementById('tool-input')?.value;
+  const flags = document.getElementById('tool-flags')?.value;
+  if (!pattern || text === undefined) return;
+  await runDevTool('regex-test', { pattern, text, flags });
+}
+
+async function runColorPalette() {
+  const base = document.getElementById('tool-base')?.value;
+  const count = document.getElementById('tool-count')?.value || 5;
+  await runDevTool('color-palette', { base, count });
+}
+
+async function runMarkdownPreview() {
+  const markdown = document.getElementById('tool-input')?.value;
+  if (!markdown) return;
+  await runDevTool('markdown-preview', { markdown });
+}
+
+async function runEnvTemplate() {
+  const type = document.getElementById('tool-type')?.value;
+  await runDevTool('env-template', { type });
+}
+
+async function runSqlFormat() {
+  const sql = document.getElementById('tool-input')?.value;
+  if (!sql) return;
+  await runDevTool('sql-format', { sql });
+}
+
+async function runLoremIpsum() {
+  const count = document.getElementById('tool-count')?.value || 3;
+  const type = document.getElementById('tool-type')?.value;
+  await runDevTool('lorem-ipsum', { count, type });
+}
+
+async function runCronGenerator() {
+  const minute = document.getElementById('tool-minute')?.value || '*';
+  const hour = document.getElementById('tool-hour')?.value || '*';
+  const day = document.getElementById('tool-day')?.value || '*';
+  const month = document.getElementById('tool-month')?.value || '*';
+  const weekday = document.getElementById('tool-weekday')?.value || '*';
+  await runDevTool('cron-generator', { minute, hour, day, month, weekday });
+}
+
+async function runTextDiff() {
+  const text1 = document.getElementById('tool-text1')?.value;
+  const text2 = document.getElementById('tool-text2')?.value;
+  if (!text1 || text2 === undefined) return;
+  await runDevTool('text-diff', { text1, text2 });
+}
+
+async function saveSnippet() {
+  const title = document.getElementById('snippet-title')?.value;
+  const language = document.getElementById('snippet-lang')?.value;
+  const code = document.getElementById('snippet-code')?.value;
+  const description = document.getElementById('snippet-desc')?.value;
+  
+  if (!title || !code) {
+    alert('Title and code are required');
+    return;
+  }
+  
+  await fetch(`${API_BASE_URL}/api/dev-tools/snippets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: currentUserId, title, language, code, description })
+  });
+  
+  document.getElementById('snippet-title').value = '';
+  document.getElementById('snippet-lang').value = '';
+  document.getElementById('snippet-code').value = '';
+  document.getElementById('snippet-desc').value = '';
+  
+  loadSnippets();
+}
+
+async function loadSnippets() {
+  const response = await fetch(`${API_BASE_URL}/api/dev-tools/snippets?user_id=${currentUserId}`);
+  const data = await response.json();
+  const resultEl = document.getElementById('tool-result');
+  if (resultEl && data.success) {
+    if (data.snippets.length === 0) {
+      resultEl.innerHTML = '<div class="tool-empty">No saved snippets</div>';
+      return;
+    }
+    resultEl.innerHTML = data.snippets.map(s => `
+      <div class="snippet-item">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong>${escapeHtml(s.title)}</strong>
+          <div>
+            <button class="btn btn-secondary btn-sm" onclick="loadSnippet(${s.id})">Load</button>
+            <button class="btn btn-secondary btn-sm" onclick="deleteSnippet(${s.id})">Delete</button>
+          </div>
+        </div>
+        <span style="color:var(--text-muted);font-size:0.8rem;">${s.language} - ${new Date(s.created_at).toLocaleDateString()}</span>
+        ${s.description ? `<div style="font-size:0.85rem;color:var(--text-secondary);margin-top:4px;">${escapeHtml(s.description)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+}
+
+async function loadSnippet(id) {
+  const response = await fetch(`${API_BASE_URL}/api/dev-tools/snippets/${id}?user_id=${currentUserId}`);
+  const data = await response.json();
+  if (data.success) {
+    document.getElementById('snippet-code').value = data.snippet.code;
+    document.getElementById('snippet-title').value = data.snippet.title;
+    document.getElementById('snippet-lang').value = data.snippet.language;
+    document.getElementById('snippet-desc').value = data.snippet.description || '';
+    switchTool('snippets');
+  }
+}
+
+async function deleteSnippet(id) {
+  if (!confirm('Delete this snippet?')) return;
+  await fetch(`${API_BASE_URL}/api/dev-tools/snippets/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: currentUserId })
+  });
+  loadSnippets();
+}
+
+async function saveToolHistory(tool, input, output) {
+  try {
+    await fetch(`${API_BASE_URL}/api/dev-tools/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: currentUserId, tool, input: input.substring(0, 1000), output: output.substring(0, 2000) })
+    });
+  } catch (e) {
+    // silent fail
   }
 }
 

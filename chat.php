@@ -74,6 +74,7 @@ $userLanguage = $user['language'] ?? 'en';
             <div class="sidebar-actions">
                 <button class="btn btn-secondary btn-sm" onclick="shareChat()" title="Share this chat" data-i18n="btn_share">Share</button>
                 <button class="btn btn-secondary btn-sm" onclick="toggleTemplateModal()" title="Prompt Templates" data-i18n="btn_templates">Templates</button>
+                <button class="btn btn-secondary btn-sm" onclick="toggleToolsModal()" title="Developer Tools" data-i18n="btn_tools">Tools</button>
                 <button class="btn btn-secondary btn-sm" onclick="downloadChat()" data-i18n="btn_download">Download</button>
                 <button id="pwa-install-btn" class="btn btn-primary btn-sm" onclick="installPWA()" style="display:none;" data-i18n="btn_install_app">Install App</button>
                 <a href="/logout.php" class="btn btn-outline btn-sm" data-i18n="btn_logout">Logout</a>
@@ -173,19 +174,49 @@ $userLanguage = $user['language'] ?? 'en';
     
     <!-- Prompt Templates Modal -->
     <div id="template-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
-        <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:24px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
+        <div class="template-modal-inner" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:24px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                 <h3 style="margin:0;">Prompt Templates</h3>
                 <button onclick="toggleTemplateModal()" style="background:none; border:none; color:var(--text-secondary); font-size:1.5rem; cursor:pointer;">&times;</button>
             </div>
             
-            <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <div class="template-form-row" style="display:flex; gap:8px; margin-bottom:16px;">
                 <input type="text" id="template-title" placeholder="Template title" style="flex:1; padding:8px 12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:var(--radius-sm); color:var(--text-primary);">
                 <input type="text" id="template-prompt" placeholder="Prompt text" style="flex:2; padding:8px 12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:var(--radius-sm); color:var(--text-primary);">
                 <button onclick="savePromptTemplate()" class="btn btn-primary btn-sm">Save</button>
             </div>
             
             <div id="template-list"></div>
+        </div>
+    </div>
+
+    <!-- Developer Tools Modal -->
+    <div id="tools-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+        <div class="tools-modal-inner" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:24px; max-width:700px; width:95%; max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0;">Developer Tools</h3>
+                <button onclick="toggleToolsModal()" style="background:none; border:none; color:var(--text-secondary); font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div class="tools-tabs" style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto; padding-bottom:4px; flex-wrap:wrap;">
+                <button class="tool-tab active" data-tool="format-code" onclick="switchTool('format-code')">Code Format</button>
+                <button class="tool-tab" data-tool="format-json" onclick="switchTool('format-json')">JSON Format</button>
+                <button class="tool-tab" data-tool="base64" onclick="switchTool('base64')">Base64</button>
+                <button class="tool-tab" data-tool="uuid" onclick="switchTool('uuid')">UUID</button>
+                <button class="tool-tab" data-tool="regex-test" onclick="switchTool('regex-test')">Regex Test</button>
+                <button class="tool-tab" data-tool="color-palette" onclick="switchTool('color-palette')">Colors</button>
+                <button class="tool-tab" data-tool="markdown-preview" onclick="switchTool('markdown-preview')">Markdown</button>
+                <button class="tool-tab" data-tool="env-template" onclick="switchTool('env-template')">ENV Template</button>
+                <button class="tool-tab" data-tool="sql-format" onclick="switchTool('sql-format')">SQL Format</button>
+                <button class="tool-tab" data-tool="lorem-ipsum" onclick="switchTool('lorem-ipsum')">Lorem Ipsum</button>
+                <button class="tool-tab" data-tool="cron-generator" onclick="switchTool('cron-generator')">Cron Gen</button>
+                <button class="tool-tab" data-tool="text-diff" onclick="switchTool('text-diff')">Text Diff</button>
+                <button class="tool-tab" data-tool="snippets" onclick="switchTool('snippets')">Snippets</button>
+            </div>
+            
+            <div class="tools-content" id="tools-content" style="flex:1; overflow-y:auto; padding-right:4px;">
+                <!-- Tool panels will be rendered here -->
+            </div>
         </div>
     </div>
 </body>

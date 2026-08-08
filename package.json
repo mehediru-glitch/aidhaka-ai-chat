@@ -1,7 +1,7 @@
 {
   "name": "aidhaka-ai-chat-api",
   "version": "1.0.0",
-  "description": "Aidhaka AI Chatbot API - Node.js Express server for AI chat",
+  "description": "Aidhaka AI Chatbot API - Node.js Express server for offline AI chat",
   "main": "api/server.js",
   "scripts": {
     "start": "node api/server.js",
@@ -12,10 +12,8 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "axios": "^1.6.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "mysql2": "^3.13.0"

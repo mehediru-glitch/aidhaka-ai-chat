@@ -20,9 +20,5 @@ services:
         value: omorhafsaM1@
       - key: DB_NAME
         value: diamonds_aidhaka
-      - key: KEYS_FILE
-        value: /app/aidhaka.json
       - key: FRONTEND_URL
         value: https://aidhaka.aiammu.com
-      - key: COHERE_API_KEY
-        value: 
