@@ -158,20 +158,23 @@ function initChat() {
   if (menuToggle && sidebar) {
     menuToggle.addEventListener('click', () => {
       sidebar.classList.add('open');
+      document.body.classList.add('sidebar-open');
     });
   }
 
   if (sidebarClose && sidebar) {
     sidebarClose.addEventListener('click', () => {
       sidebar.classList.remove('open');
+      document.body.classList.remove('sidebar-open');
     });
   }
 
   document.addEventListener('click', (e) => {
     if (sidebar && sidebar.classList.contains('open') && 
-        !sidebar.contains(e.target) && 
+        e.target === sidebar &&
         !menuToggle.contains(e.target)) {
       sidebar.classList.remove('open');
+      document.body.classList.remove('sidebar-open');
     }
   });
 

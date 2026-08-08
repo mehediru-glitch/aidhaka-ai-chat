@@ -53,6 +53,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+body.chat-page {
+  display: flex;
+  min-height: 100vh;
+}
+
+body.chat-page.sidebar-open {
+  overflow: hidden;
+}
+
 body[lang="bn"] {
   font-family: var(--font-bengali);
 }
@@ -817,6 +826,8 @@ input, textarea, select {
   flex-direction: column;
   flex-shrink: 0;
   transition: var(--transition);
+  position: relative;
+  z-index: 100;
 }
 
 .chat-sidebar::after {
@@ -828,6 +839,7 @@ input, textarea, select {
   pointer-events: none;
   transition: opacity 0.3s ease;
   z-index: 99;
+  display: none;
 }
 
 .chat-sidebar.open::after {
@@ -2103,6 +2115,7 @@ input, textarea, select {
     top: 0;
     left: 0;
     bottom: 0;
+    width: 280px;
     z-index: 100;
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
@@ -2110,6 +2123,10 @@ input, textarea, select {
 
   .chat-sidebar.open {
     transform: translateX(0);
+  }
+
+  .chat-sidebar.open::after {
+    display: block;
   }
 
   .sidebar-close {

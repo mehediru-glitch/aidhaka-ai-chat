@@ -114,8 +114,186 @@ const OFFLINE_RESPONSES = {
   }
 };
 
+const CODE_SNIPPETS = {
+  'javascript reverse string': `function reverseString(str) {
+  return str.split('').reverse().join('');
+}
+
+// Usage
+console.log(reverseString("hello")); // "olleh"
+
+// Or using spread operator
+function reverseStringES6(str) {
+  return [...str].reverse().join('');
+}`,
+
+  'mysql database connection nodejs': `const mysql = require('mysql2');
+
+const connection = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'your_password',
+  database: 'your_database'
+});
+
+connection.connect((err) => {
+  if (err) throw err;
+  console.log('Connected to MySQL database!');
+});`,
+
+  'css flexbox': `.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.item {
+  flex: 1;
+  min-width: 200px;
+}`,
+
+  'let vs const javascript': `// let - can be reassigned
+let count = 0;
+count = 1; // OK
+
+// const - cannot be reassigned
+const PI = 3.14159;
+// PI = 3; // Error: Assignment to constant variable
+
+// Key difference: let is for values that change, const is for values that stay the same`,
+
+  'python prime number': `def is_prime(n):
+    if n <= 1:
+        return False
+    for i in range(2, int(n**0.5) + 1):
+        if n % i == 0:
+            return False
+    return True
+
+# Usage
+print(is_prime(17))  # True
+print(is_prime(4))   # False`,
+
+  'async await error handling': `async function fetchData() {
+  try {
+    const response = await fetch('/api/data');
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error:', error.message);
+    // Handle error appropriately
+  } finally {
+    console.log('Cleanup code here');
+  }
+}`,
+
+  'html form validation': `<form id="myForm">
+  <input type="text" id="name" required minlength="2">
+  <input type="email" id="email" required>
+  <button type="submit">Submit</button>
+</form>
+
+<script>
+document.getElementById('myForm').addEventListener('submit', function(e) {
+  const name = document.getElementById('name').value;
+  const email = document.getElementById('email').value;
+  
+  if (!name || !email) {
+    e.preventDefault();
+    alert('Please fill all fields');
+  }
+});
+</script>`,
+
+  'rest api example': `// REST API Example with Express.js
+const express = require('express');
+const app = express();
+
+// GET - Retrieve data
+app.get('/api/users', (req, res) => {
+  res.json({ users: [{ id: 1, name: 'John' }] });
+});
+
+// POST - Create data
+app.post('/api/users', (req, res) => {
+  res.json({ message: 'User created', user: req.body });
+});
+
+// PUT - Update data
+app.put('/api/users/:id', (req, res) => {
+  res.json({ message: 'User updated' });
+});
+
+// DELETE - Delete data
+app.delete('/api/users/:id', (req, res) => {
+  res.json({ message: 'User deleted' });
+});`,
+
+  'sql second highest salary': `-- Method 1: Using LIMIT and OFFSET
+SELECT DISTINCT salary 
+FROM employees 
+ORDER BY salary DESC 
+LIMIT 1 OFFSET 1;
+
+-- Method 2: Using subquery
+SELECT MAX(salary) 
+FROM employees 
+WHERE salary < (SELECT MAX(salary) FROM employees);`,
+
+  'center div css': `/* Method 1: Flexbox */
+.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+/* Method 2: Grid */
+.container {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+
+/* Method 3: Absolute positioning */
+.container {
+  position: relative;
+}
+.centered {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}`
+};
+
+function findCodeSnippet(question) {
+  const q = question.toLowerCase();
+  
+  for (const [key, snippet] of Object.entries(CODE_SNIPPETS)) {
+    const keywords = key.split(' ');
+    const matchCount = keywords.filter(k => q.includes(k)).length;
+    if (matchCount >= 2) {
+      return snippet;
+    }
+  }
+  
+  return null;
+}
+
 function getOfflineResponse(question) {
   const q = question.toLowerCase();
+  
+  const codeSnippet = findCodeSnippet(q);
+  if (codeSnippet) {
+    return {
+      success: true,
+      reply: codeSnippet,
+      provider: 'offline'
+    };
+  }
   
   for (const [category, data] of Object.entries(OFFLINE_RESPONSES)) {
     if (Array.isArray(data)) {
