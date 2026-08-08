@@ -46,8 +46,16 @@ try {
     }
     
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        $stmt = $pdo->prepare('SELECT question, answer, created_at FROM chat_history WHERE user_id = ? ORDER BY created_at ASC');
-        $stmt->execute([$user_id]);
+        $session_id = $_GET['session_id'] ?? null;
+        
+        if ($session_id) {
+            $stmt = $pdo->prepare('SELECT question, answer, created_at, provider, is_image FROM chat_history WHERE user_id = ? AND session_id = ? ORDER BY created_at ASC');
+            $stmt->execute([$user_id, $session_id]);
+        } else {
+            $stmt = $pdo->prepare('SELECT question, answer, created_at, provider, is_image FROM chat_history WHERE user_id = ? ORDER BY created_at ASC');
+            $stmt->execute([$user_id]);
+        }
+        
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         echo json_encode(['success' => true, 'history' => $history]);
@@ -56,6 +64,8 @@ try {
         $question = $input['question'] ?? '';
         $answer = $input['answer'] ?? '';
         $provider = $input['provider'] ?? 'unknown';
+        $session_id = $input['session_id'] ?? null;
+        $is_image = $input['is_image'] ?? 0;
         
         if (!$question || !$answer) {
             http_response_code(400);
@@ -64,13 +74,13 @@ try {
         }
         
         try {
-            $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer, provider) VALUES (?, ?, ?, ?)');
-            $stmt->execute([$user_id, $question, $answer, $provider]);
+            $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer, provider, session_id, is_image) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$user_id, $question, $answer, $provider, $session_id, $is_image]);
         } catch (PDOException $insertErr) {
-            error_log('Insert with provider failed: ' . $insertErr->getMessage());
+            error_log('Insert with session failed: ' . $insertErr->getMessage());
             try {
-                $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer) VALUES (?, ?, ?)');
-                $stmt->execute([$user_id, $question, $answer]);
+                $stmt = $pdo->prepare('INSERT INTO chat_history (user_id, question, answer, provider) VALUES (?, ?, ?, ?)');
+                $stmt->execute([$user_id, $question, $answer, $provider]);
             } catch (PDOException $insertErr2) {
                 throw new PDOException('Failed to save chat: ' . $insertErr2->getMessage());
             }

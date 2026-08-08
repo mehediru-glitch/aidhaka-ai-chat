@@ -402,11 +402,11 @@ async function callCohere(question, apiKey) {
 // CHAT HISTORY HELPERS
 // ============================================
 
-async function saveChatToDB(userId, question, answer, provider, isImage = false, shareId = null) {
+async function saveChatToDB(userId, question, answer, provider, isImage = false, shareId = null, sessionId = null) {
   try {
     await pool.query(
-      'INSERT INTO chat_history (user_id, question, answer, provider, is_image, share_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [userId, question, answer, provider || 'unknown', isImage ? 1 : 0, shareId]
+      'INSERT INTO chat_history (user_id, question, answer, provider, is_image, share_id, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [userId, question, answer, provider || 'unknown', isImage ? 1 : 0, shareId, sessionId]
     );
   } catch (err) {
     console.error('Save chat error:', err.message);
@@ -879,6 +879,87 @@ app.delete('/api/templates/:id', async (req, res) => {
   } catch (err) {
     console.error('Delete template error:', err.message);
     res.status(500).json({ success: false, error: 'Failed to delete template' });
+  }
+});
+
+// ============================================
+// CHAT SESSIONS ENDPOINTS
+// ============================================
+
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const user_id = req.query.user_id;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const [rows] = await pool.query(
+      'SELECT id, title, created_at, updated_at FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC',
+      [user_id]
+    );
+
+    res.json({ success: true, sessions: rows });
+  } catch (err) {
+    console.error('Sessions error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load sessions' });
+  }
+});
+
+app.post('/api/sessions', async (req, res) => {
+  try {
+    const { user_id, title } = req.body;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO chat_sessions (user_id, title) VALUES (?, ?)',
+      [user_id, title || 'New Chat']
+    );
+
+    res.json({ success: true, id: result.insertId, title: title || 'New Chat' });
+  } catch (err) {
+    console.error('Create session error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to create session' });
+  }
+});
+
+app.put('/api/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id, title } = req.body;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    await pool.query(
+      'UPDATE chat_sessions SET title = ? WHERE id = ? AND user_id = ?',
+      [title, id, user_id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Update session error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to update session' });
+  }
+});
+
+app.delete('/api/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id } = req.body;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    await pool.query('DELETE FROM chat_sessions WHERE id = ? AND user_id = ?', [id, user_id]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete session error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to delete session' });
   }
 });
 

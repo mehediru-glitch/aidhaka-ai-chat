@@ -29,7 +29,7 @@ $userLanguage = $user['language'] ?? 'en';
     <link rel="stylesheet" href="/assets/css/style.css">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#6C63FF">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body class="chat-page">
@@ -47,15 +47,12 @@ $userLanguage = $user['language'] ?? 'en';
         
         <div class="sidebar-content">
             <div class="sidebar-section">
-                <button class="btn btn-primary btn-sm" style="width: 100%; margin-bottom: 12px;" onclick="startNewChat()" data-i18n="chat_new">
+                <button class="btn btn-primary btn-sm" style="width: 100%; margin-bottom: 12px;" onclick="createNewSession()" data-i18n="chat_new">
                     + New Chat
                 </button>
-                <div class="sidebar-section-title" data-i18n="sidebar_history">Chat History</div>
-                <div class="history-header-actions">
-                    <button class="history-clear-btn" onclick="clearAllHistory()" data-i18n="chat_clear">Clear All</button>
-                </div>
-                <div class="history-list" id="history-list">
-                    <div class="history-empty" data-i18n="history_empty">No chat history yet</div>
+                <div class="sidebar-section-title" data-i18n="sidebar_sessions">Chats</div>
+                <div class="history-list" id="sessions-list">
+                    <div class="history-empty" data-i18n="history_empty">No chats yet</div>
                 </div>
             </div>
         </div>

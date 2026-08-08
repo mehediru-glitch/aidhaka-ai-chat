@@ -7,6 +7,8 @@ let isChatLoading = false;
 let chatHistoryLoaded = false;
 let notificationEnabled = true;
 let lastFailedMessage = '';
+let currentSessionId = null;
+let sessionsLoaded = false;
 
 document.addEventListener('DOMContentLoaded', () => {
   initLanguage();
@@ -15,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAnimations();
   
   if (document.body.classList.contains('chat-page')) {
-    loadChatHistory();
+    loadSessions();
   }
 });
 
@@ -189,14 +191,36 @@ function initChat() {
   }
 }
 
-async function loadChatHistory() {
-  if (chatHistoryLoaded) return;
+async function loadSessions() {
+  if (sessionsLoaded) return;
   
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/sessions?user_id=${currentUserId}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      renderSessionsList(data.sessions);
+      sessionsLoaded = true;
+      
+      if (data.sessions.length > 0) {
+        switchSession(data.sessions[0].id);
+      } else {
+        createNewSession();
+      }
+    }
+  } catch (err) {
+    if (typeof __DEBUG__ !== 'undefined') {
+      console.error('Failed to load sessions:', err);
+    }
+  }
+}
+
+async function loadSessionMessages(sessionId) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
   
   try {
-    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`);
+    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}&session_id=${sessionId}`);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -209,39 +233,60 @@ async function loadChatHistory() {
       
       data.history.forEach(msg => {
         appendMessage('user', msg.question, false);
-        appendMessage('assistant', msg.answer, false);
+        if (msg.is_image) {
+          appendImageMessage(msg.answer, msg.question, false);
+        } else {
+          appendMessage('assistant', msg.answer, false, msg.provider);
+        }
       });
       
       chatHistoryLoaded = true;
       container.scrollTop = container.scrollHeight;
-      loadSidebarHistory(data.history);
+    } else {
+      container.innerHTML = `
+        <div class="welcome-message">
+          <div class="welcome-avatar">AI</div>
+          <h3 data-i18n="welcome_title">Hello! I'm Aidhaka AI</h3>
+          <p data-i18n="welcome_subtitle">How can I help you today? Ask me anything in English, Bangla, or Hindi.</p>
+        </div>
+      `;
+      chatHistoryLoaded = false;
     }
   } catch (err) {
     if (typeof __DEBUG__ !== 'undefined') {
-      console.error('Failed to load chat history:', err);
+      console.error('Failed to load session messages:', err);
     }
   }
 }
 
-function loadSidebarHistory(history) {
-  const historyList = document.getElementById('history-list');
-  if (!historyList || !history || history.length === 0) return;
+function renderSessionsList(sessions) {
+  const sessionsList = document.getElementById('sessions-list');
+  if (!sessionsList) return;
 
   try {
-    historyList.innerHTML = '';
+    sessionsList.innerHTML = '';
     
-    history.forEach((msg, index) => {
+    if (sessions.length === 0) {
+      sessionsList.innerHTML = '<div class="history-empty" data-i18n="history_empty">No chats yet</div>';
+      return;
+    }
+    
+    sessions.forEach(session => {
       const item = document.createElement('div');
       item.className = 'history-item';
-      item.dataset.index = index;
+      if (session.id === currentSessionId) {
+        item.classList.add('active');
+      }
+      item.dataset.sessionId = session.id;
       
       const content = document.createElement('div');
       content.className = 'history-item-content';
       
-      const preview = msg.question.length > 40 ? msg.question.substring(0, 40) + '...' : msg.question;
+      const title = session.title || 'New Chat';
+      const preview = title.length > 40 ? title.substring(0, 40) + '...' : title;
       content.innerHTML = `
         <div class="history-question">${escapeHtml(preview)}</div>
-        <div class="history-time">${new Date(msg.created_at).toLocaleString()}</div>
+        <div class="history-time">${new Date(session.updated_at).toLocaleString()}</div>
       `;
       
       const deleteBtn = document.createElement('button');
@@ -250,77 +295,135 @@ function loadSidebarHistory(history) {
       deleteBtn.title = 'Delete this chat';
       deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        deleteSingleHistory(item, msg.question);
+        deleteSession(session.id, item);
       });
       
       item.appendChild(content);
       item.appendChild(deleteBtn);
       
       item.addEventListener('click', () => {
-        const container = document.getElementById('chat-messages');
-        if (container) {
-          container.scrollTop = container.scrollHeight;
-        }
+        switchSession(session.id);
       });
       
-      historyList.appendChild(item);
+      sessionsList.appendChild(item);
     });
   } catch (err) {
-    console.error('Failed to load sidebar history:', err);
+    console.error('Failed to render sessions list:', err);
   }
 }
 
-async function deleteSingleHistory(itemElement, question) {
+async function createNewSession() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: currentUserId, title: 'New Chat' })
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      currentSessionId = data.id;
+      sessionsLoaded = false;
+      loadSessions();
+      
+      const container = document.getElementById('chat-messages');
+      if (container) {
+        container.innerHTML = `
+          <div class="welcome-message">
+            <div class="welcome-avatar">AI</div>
+            <h3 data-i18n="welcome_title">Hello! I'm Aidhaka AI</h3>
+            <p data-i18n="welcome_subtitle">How can I help you today? Ask me anything in English, Bangla, or Hindi.</p>
+          </div>
+        `;
+        chatHistoryLoaded = false;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to create session:', err);
+  }
+}
+
+async function switchSession(sessionId) {
+  currentSessionId = sessionId;
+  chatHistoryLoaded = false;
+  
+  const items = document.querySelectorAll('.history-item');
+  items.forEach(item => {
+    item.classList.toggle('active', parseInt(item.dataset.sessionId) === sessionId);
+  });
+  
+  await loadSessionMessages(sessionId);
+}
+
+async function deleteSession(sessionId, itemElement) {
   if (!confirm('Delete this chat?')) return;
   
   try {
-    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
+      body: JSON.stringify({ user_id: currentUserId })
     });
     
     if (response.ok) {
       if (itemElement) {
         itemElement.remove();
       }
-      chatHistoryLoaded = false;
-      loadChatHistory();
+      
+      if (currentSessionId === sessionId) {
+        currentSessionId = null;
+        chatHistoryLoaded = false;
+        
+        const container = document.getElementById('chat-messages');
+        if (container) {
+          container.innerHTML = `
+            <div class="welcome-message">
+              <div class="welcome-avatar">AI</div>
+              <h3 data-i18n="welcome_title">Hello! I'm Aidhaka AI</h3>
+              <p data-i18n="welcome_subtitle">How can I help you today? Ask me anything in English, Bangla, or Hindi.</p>
+            </div>
+          `;
+        }
+        
+        sessionsLoaded = false;
+        loadSessions();
+      }
     }
   } catch (err) {
-    console.error('Failed to delete chat:', err);
+    console.error('Failed to delete session:', err);
   }
 }
 
 async function clearAllHistory() {
-  if (!confirm('Clear all chat history? This cannot be undone.')) return;
+  if (!confirm('Clear current chat? This cannot be undone.')) return;
   
   const btn = document.querySelector('.history-clear-btn');
   if (btn) btn.disabled = true;
   
   try {
-    const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    if (response.ok) {
-      startNewChat();
+    if (currentSessionId) {
+      await fetch(`${API_BASE_URL}/api/sessions/${currentSessionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: currentUserId })
+      });
     }
+    
+    createNewSession();
   } catch (err) {
     console.error('Failed to clear chat:', err);
-    startNewChat();
+    createNewSession();
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
-async function saveToHistoryLocally(question, answer, provider) {
+async function saveToHistoryLocally(question, answer, provider, isImage = false) {
   try {
     const response = await fetch(`${HISTORY_API_URL}/index.php?user_id=${currentUserId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, answer, provider })
+      body: JSON.stringify({ question, answer, provider, is_image: isImage ? 1 : 0, session_id: currentSessionId })
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
@@ -382,6 +485,11 @@ async function sendMessage(retryMessage = null) {
 
   if (!message || isChatLoading) return;
 
+  if (!currentSessionId) {
+    await createNewSession();
+    if (!currentSessionId) return;
+  }
+
   isChatLoading = true;
   if (!retryMessage) {
     sendBtn.disabled = true;
@@ -414,7 +522,7 @@ async function sendMessage(retryMessage = null) {
         if (imgData.success && imgData.imageUrl) {
           lastGeneratedImageUrl = imgData.imageUrl;
           appendImageMessage(imgData.imageUrl, message);
-          saveToHistoryLocally(message, imgData.imageUrl, 'image');
+          saveToHistoryLocally(message, imgData.imageUrl, 'image', true);
         } else {
           appendMessage('assistant', imgData.error || t('chat_error'), true, null, true);
         }
@@ -836,7 +944,7 @@ async function handleImageEdit(prompt) {
     
     lastGeneratedImageUrl = editedImageUrl;
     appendImageMessage(editedImageUrl, prompt);
-    saveToHistoryLocally(prompt, editedImageUrl, 'image-edit');
+    saveToHistoryLocally(prompt, editedImageUrl, 'image-edit', true);
   } catch (err) {
     appendMessage('assistant', t('chat_image_error'), true, null, true);
   }
@@ -1074,18 +1182,7 @@ function downloadChat() {
 }
 
 function startNewChat() {
-  const container = document.getElementById('chat-messages');
-  if (!container) return;
-  
-  container.innerHTML = `
-    <div class="welcome-message">
-      <div class="welcome-avatar">AI</div>
-      <h3 data-i18n="welcome_title">Hello! I'm Aidhaka AI</h3>
-      <p data-i18n="welcome_subtitle">How can I help you today? Ask me anything in English, Bangla, or Hindi.</p>
-    </div>
-  `;
-  
-  chatHistoryLoaded = false;
+  createNewSession();
 }
 
 // ============================================

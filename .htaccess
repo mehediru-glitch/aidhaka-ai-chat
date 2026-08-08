@@ -25,13 +25,17 @@
 </IfModule>
 
 # Block sensitive files
-<FilesMatch "\.(env|sql|log|md|txt|json)$">
+<FilesMatch "\.(env|sql|log|md|txt)$">
     Require all denied
 </FilesMatch>
 
 <FilesMatch "^(composer\.json|package\.json|ecosystem\.config\.js|server\.js)$">
     Require all denied
 </FilesMatch>
+
+<Files "manifest.json">
+    Require all granted
+</Files>
 
 # Block cache directories (if ever placed inside web root)
 <DirectoryMatch "cache|aidhaka-cache">
