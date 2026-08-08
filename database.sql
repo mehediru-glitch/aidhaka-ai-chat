@@ -28,7 +28,32 @@ CREATE TABLE IF NOT EXISTS chat_history (
     user_id INT NOT NULL,
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
+    provider VARCHAR(50) DEFAULT 'unknown',
+    is_image TINYINT(1) DEFAULT 0,
+    share_id VARCHAR(20) UNIQUE NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_created (user_id, created_at)
+    INDEX idx_user_created (user_id, created_at),
+    INDEX idx_share_id (share_id)
+);
+
+CREATE TABLE IF NOT EXISTS prompt_templates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    title VARCHAR(150) NOT NULL,
+    prompt TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS shared_chats (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    share_id VARCHAR(20) UNIQUE NOT NULL,
+    user_id INT NOT NULL,
+    messages JSON NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_share_id (share_id)
 );

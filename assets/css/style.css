@@ -1247,6 +1247,16 @@ input, textarea, select {
   border-color: var(--accent-primary);
 }
 
+.sidebar-actions .btn {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .message-provider {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -1254,6 +1264,77 @@ input, textarea, select {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 500;
+}
+
+/* Streaming text effect */
+.message.streaming .message-text {
+  border-right: 2px solid var(--accent-primary);
+  animation: blink 0.7s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { border-color: var(--accent-primary); }
+  50% { border-color: transparent; }
+}
+
+/* Template modal */
+#template-modal {
+  display: none;
+}
+
+.template-item {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+}
+
+.template-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.template-preview {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.template-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.template-use-btn, .template-delete-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  transition: var(--transition);
+}
+
+.template-use-btn:hover {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.template-delete-btn:hover {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
+.template-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 20px;
+  font-size: 0.9rem;
 }
 
 .message-text {

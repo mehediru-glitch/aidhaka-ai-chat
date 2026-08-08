@@ -377,6 +377,7 @@ function isImageRequest(text) {
 async function sendMessage(retryMessage = null) {
   const textarea = document.getElementById('chat-input');
   const sendBtn = document.getElementById('send-btn');
+  const container = document.getElementById('chat-messages');
   const message = retryMessage || textarea.value.trim();
 
   if (!message || isChatLoading) return;
@@ -411,6 +412,7 @@ async function sendMessage(retryMessage = null) {
         const imgData = await imgRes.json();
         
         if (imgData.success && imgData.imageUrl) {
+          lastGeneratedImageUrl = imgData.imageUrl;
           appendImageMessage(imgData.imageUrl, message);
           saveToHistoryLocally(message, imgData.imageUrl, 'image');
         } else {
@@ -421,6 +423,93 @@ async function sendMessage(retryMessage = null) {
       }
       
       textarea.focus();
+      return;
+    }
+
+    if (isImageEditRequest(message)) {
+      clearTimeout(timeoutId);
+      removeSkeletonLoading();
+      
+      appendMessage('user', message);
+      await handleImageEdit(message);
+      
+      textarea.focus();
+      return;
+    }
+
+    const useStreaming = message.length > 100;
+    const endpoint = useStreaming ? '/api/chat/stream' : '/api/chat';
+    
+    if (useStreaming) {
+      clearTimeout(timeoutId);
+      removeSkeletonLoading();
+      
+      appendMessage('user', message);
+      const streamingMsg = await appendStreamingMessage('', 'pollinations');
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            question: message,
+            language: currentLang,
+            user_id: currentUserId
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          if (streamingMsg) {
+            const textEl = streamingMsg.querySelector('.streaming-text');
+            if (textEl) {
+              textEl.innerHTML = parseMarkdown(fullText);
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        }
+        
+        if (streamingMsg) {
+          streamingMsg.classList.remove('streaming');
+          const textEl = streamingMsg.querySelector('.streaming-text');
+          if (textEl) textEl.classList.remove('streaming-text');
+        }
+        
+        chatHistoryLoaded = true;
+        lastFailedMessage = '';
+        playNotificationSound();
+        saveToHistoryLocally(message, fullText, 'pollinations');
+      } catch (err) {
+        if (streamingMsg) {
+          streamingMsg.remove();
+        }
+        if (err.name === 'AbortError') {
+          appendMessage('assistant', 'Request timed out. Please try again.');
+        } else {
+          lastFailedMessage = message;
+          appendMessage('assistant', t('chat_network_error'), true, null, true);
+        }
+      } finally {
+        isChatLoading = false;
+        sendBtn.disabled = false;
+        textarea.focus();
+      }
+      
       return;
     }
 
@@ -533,6 +622,224 @@ function appendMessage(role, content, animate = true, provider = null, isError =
   container.appendChild(messageDiv);
 
   container.scrollTop = container.scrollHeight;
+}
+
+async function appendStreamingMessage(content, provider = null, isError = false) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message message-assistant streaming';
+  if (isError) messageDiv.classList.add('message-error');
+
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.textContent = 'AI';
+
+  const messageContent = document.createElement('div');
+  messageContent.className = 'message-content';
+
+  if (provider) {
+    const providerBadge = document.createElement('div');
+    providerBadge.className = 'message-provider';
+    providerBadge.textContent = provider;
+    messageContent.appendChild(providerBadge);
+  }
+
+  const messageText = document.createElement('div');
+  messageText.className = 'message-text streaming-text';
+  messageContent.appendChild(messageText);
+
+  if (isError) {
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'retry-btn';
+    retryBtn.textContent = '🔄 Retry';
+    retryBtn.addEventListener('click', () => {
+      retryBtn.remove();
+      sendMessage(lastFailedMessage);
+    });
+    messageContent.appendChild(retryBtn);
+  }
+
+  messageDiv.appendChild(avatar);
+  messageDiv.appendChild(messageContent);
+  container.appendChild(messageDiv);
+
+  const words = content.split(' ');
+  let currentText = '';
+  
+  for (let i = 0; i < words.length; i++) {
+    currentText += (i > 0 ? ' ' : '') + words[i];
+    messageText.innerHTML = parseMarkdown(currentText);
+    container.scrollTop = container.scrollHeight;
+    await new Promise(r => setTimeout(r, 20 + Math.random() * 30));
+  }
+
+  messageDiv.classList.remove('streaming');
+  return messageDiv;
+}
+
+async function shareChat() {
+  if (!confirm('Share this chat? A public link will be generated.')) return;
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/chat/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: currentUserId })
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      navigator.clipboard.writeText(data.url).then(() => {
+        alert('Share link copied to clipboard!');
+      }).catch(() => {
+        prompt('Copy this link:', data.url);
+      });
+    } else {
+      alert(data.error || 'Failed to share chat');
+    }
+  } catch (err) {
+    alert('Failed to share chat');
+  }
+}
+
+async function loadPromptTemplates() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/templates?user_id=${currentUserId}`);
+    const data = await response.json();
+    if (data.success) {
+      renderPromptTemplates(data.templates);
+    }
+  } catch (err) {
+    console.error('Failed to load templates:', err);
+  }
+}
+
+function renderPromptTemplates(templates) {
+  const list = document.getElementById('template-list');
+  if (!list) return;
+  
+  list.innerHTML = '';
+  
+  if (templates.length === 0) {
+    list.innerHTML = '<div class="template-empty">No templates yet</div>';
+    return;
+  }
+  
+  templates.forEach(t => {
+    const item = document.createElement('div');
+    item.className = 'template-item';
+    item.innerHTML = `
+      <div class="template-title">${escapeHtml(t.title)}</div>
+      <div class="template-preview">${escapeHtml(t.prompt.substring(0, 60))}${t.prompt.length > 60 ? '...' : ''}</div>
+      <div class="template-actions">
+        <button class="template-use-btn" data-id="${t.id}">Use</button>
+        <button class="template-delete-btn" data-id="${t.id}">Delete</button>
+      </div>
+    `;
+    
+    item.querySelector('.template-use-btn').addEventListener('click', () => {
+      const textarea = document.getElementById('chat-input');
+      if (textarea) {
+        textarea.value = t.prompt;
+        textarea.focus();
+      }
+    });
+    
+    item.querySelector('.template-delete-btn').addEventListener('click', async () => {
+      if (!confirm('Delete this template?')) return;
+      await fetch(`${API_BASE_URL}/api/templates/${t.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: currentUserId })
+      });
+      loadPromptTemplates();
+    });
+    
+    list.appendChild(item);
+  });
+}
+
+async function savePromptTemplate() {
+  const titleInput = document.getElementById('template-title');
+  const promptInput = document.getElementById('template-prompt');
+  const title = titleInput?.value.trim();
+  const prompt = promptInput?.value.trim();
+  
+  if (!title || !prompt) {
+    alert('Please enter both title and prompt');
+    return;
+  }
+  
+  await fetch(`${API_BASE_URL}/api/templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: currentUserId, title, prompt })
+  });
+  
+  titleInput.value = '';
+  promptInput.value = '';
+  loadPromptTemplates();
+}
+
+function toggleTemplateModal() {
+  const modal = document.getElementById('template-modal');
+  if (modal) {
+    modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+    if (modal.style.display === 'flex') {
+      loadPromptTemplates();
+    }
+  }
+}
+
+function isImageEditRequest(text) {
+  const lower = text.toLowerCase();
+  const editPhrases = [
+    'change', 'edit', 'modify', 'update', 'replace', 'remove', 'add',
+    'make the', 'change the', 'edit the', 'replace the',
+    'different', 'another', 'new', 'instead',
+    'red sky', 'blue sky', 'green sky',
+    'different color', 'different background',
+    'with a', 'without a', 'add a', 'remove a'
+  ];
+  
+  const imageWords = ['image', 'picture', 'photo', 'illustration', 'painting', 'artwork', 'drawing', 'generated', 'created'];
+  
+  if (editPhrases.some(p => lower.includes(p)) && lastGeneratedImageUrl !== null) {
+    const hasImageContext = imageWords.some(w => lower.includes(w));
+    const hasActionContext = ['generate', 'create', 'make', 'draw', 'render', 'show'].some(w => lower.includes(w));
+    
+    if (hasImageContext || hasActionContext) return true;
+    
+    const codeWords = ['code', 'program', 'function', 'app', 'website', 'database', 'api', 'html', 'css', 'javascript', 'python', 'java', 'react', 'sql', 'bug', 'error', 'fix', 'password', 'profile', 'account', 'name', 'email'];
+    const hasCodeContext = codeWords.some(w => lower.includes(w));
+    
+    if (!hasCodeContext) return true;
+  }
+  return false;
+}
+
+let lastGeneratedImageUrl = null;
+
+async function handleImageEdit(prompt) {
+  if (!lastGeneratedImageUrl) {
+    appendMessage('assistant', 'No previous image to edit. Please generate an image first.', true, null, true);
+    return;
+  }
+  
+  appendMessage('assistant', 'Editing image...', true, 'pollinations');
+  
+  try {
+    const encodedPrompt = encodeURIComponent(prompt);
+    const editedImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&image=${encodeURIComponent(lastGeneratedImageUrl)}`;
+    
+    lastGeneratedImageUrl = editedImageUrl;
+    appendImageMessage(editedImageUrl, prompt);
+    saveToHistoryLocally(prompt, editedImageUrl, 'image-edit');
+  } catch (err) {
+    appendMessage('assistant', t('chat_image_error'), true, null, true);
+  }
 }
 
 function appendImageMessage(imageUrl, prompt, animate = true) {

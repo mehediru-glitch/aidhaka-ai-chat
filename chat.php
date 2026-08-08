@@ -27,6 +27,10 @@ $userLanguage = $user['language'] ?? 'en';
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Bengali:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#6C63FF">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body class="chat-page">
     <aside class="chat-sidebar" id="chat-sidebar">
@@ -71,7 +75,10 @@ $userLanguage = $user['language'] ?? 'en';
                 </div>
             </div>
             <div class="sidebar-actions">
+                <button class="btn btn-secondary btn-sm" onclick="shareChat()" title="Share this chat" data-i18n="btn_share">Share</button>
+                <button class="btn btn-secondary btn-sm" onclick="toggleTemplateModal()" title="Prompt Templates" data-i18n="btn_templates">Templates</button>
                 <button class="btn btn-secondary btn-sm" onclick="downloadChat()" data-i18n="btn_download">Download</button>
+                <button id="pwa-install-btn" class="btn btn-primary btn-sm" onclick="installPWA()" style="display:none;" data-i18n="btn_install_app">Install App</button>
                 <a href="/logout.php" class="btn btn-outline btn-sm" data-i18n="btn_logout">Logout</a>
             </div>
         </div>
@@ -136,6 +143,53 @@ $userLanguage = $user['language'] ?? 'en';
         const currentUserId = <?= $user['id']; ?>;
         const API_BASE_URL = '<?= rtrim(SITE_URL, "/"); ?>';
         const HISTORY_API_URL = API_BASE_URL + '/api/chat';
+        
+        // PWA Install
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+          e.preventDefault();
+          deferredPrompt = e;
+          const installBtn = document.getElementById('pwa-install-btn');
+          if (installBtn) installBtn.style.display = 'inline-flex';
+        });
+
+        async function installPWA() {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === 'accepted') {
+            deferredPrompt = null;
+            const installBtn = document.getElementById('pwa-install-btn');
+            if (installBtn) installBtn.style.display = 'none';
+          }
+        }
+
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+              .then(() => console.log('SW registered'))
+              .catch((err) => console.log('SW registration failed:', err));
+          });
+        }
     </script>
+    
+    <!-- Prompt Templates Modal -->
+    <div id="template-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+        <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:24px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0;">Prompt Templates</h3>
+                <button onclick="toggleTemplateModal()" style="background:none; border:none; color:var(--text-secondary); font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div style="display:flex; gap:8px; margin-bottom:16px;">
+                <input type="text" id="template-title" placeholder="Template title" style="flex:1; padding:8px 12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:var(--radius-sm); color:var(--text-primary);">
+                <input type="text" id="template-prompt" placeholder="Prompt text" style="flex:2; padding:8px 12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:var(--radius-sm); color:var(--text-primary);">
+                <button onclick="savePromptTemplate()" class="btn btn-primary btn-sm">Save</button>
+            </div>
+            
+            <div id="template-list"></div>
+        </div>
+    </div>
 </body>
 </html>

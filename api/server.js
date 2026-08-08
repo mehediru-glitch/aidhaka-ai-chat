@@ -402,14 +402,14 @@ async function callCohere(question, apiKey) {
 // CHAT HISTORY HELPERS
 // ============================================
 
-async function saveChatToDB(userId, question, answer, provider) {
+async function saveChatToDB(userId, question, answer, provider, isImage = false, shareId = null) {
   try {
-    await pool.execute(
-      'INSERT INTO chat_history (user_id, question, answer) VALUES (?, ?, ?)',
-      [userId, question, answer]
+    await pool.query(
+      'INSERT INTO chat_history (user_id, question, answer, provider, is_image, share_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [userId, question, answer, provider || 'unknown', isImage ? 1 : 0, shareId]
     );
   } catch (err) {
-    console.error('Error saving chat to DB:', err.message);
+    console.error('Save chat error:', err.message);
   }
 }
 
@@ -623,7 +623,46 @@ app.post('/api/generate-image', async (req, res) => {
 });
 
 // ============================================
-// CHAT HISTORY ENDPOINTS
+// STREAMING CHAT ENDPOINT
+// ============================================
+app.post('/api/chat/stream', async (req, res) => {
+  try {
+    const { question, user_id } = req.body;
+
+    if (!question || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'Message cannot be empty' });
+    }
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    try {
+      const result = await callPollinationsAI(question);
+      
+      if (result.success) {
+        res.write(result.reply);
+        if (user_id) {
+          saveChatToDB(user_id, question, result.reply, result.provider);
+        }
+      } else {
+        res.write(result.error || 'Stream failed');
+      }
+    } catch (err) {
+      res.write('Stream failed. Please try again.');
+    }
+
+    res.end();
+  } catch (err) {
+    console.error('Stream error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: 'Stream failed' });
+    }
+  }
+});
+
+// ============================================
+// SHARE CHAT ENDPOINTS
 // ============================================
 
 // Get chat history
@@ -698,6 +737,148 @@ app.get('/api/chat/export', async (req, res) => {
   } catch (err) {
     console.error('Export error:', err.message);
     res.status(500).json({ success: false, error: 'Failed to export' });
+  }
+});
+
+// ============================================
+// SHARE CHAT ENDPOINTS
+// ============================================
+
+app.post('/api/chat/share', async (req, res) => {
+  try {
+    const { user_id, message_index } = req.body;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const shareId = generateShareId();
+    const history = await getChatHistoryFromDB(parseInt(user_id));
+    
+    if (!history || history.length === 0) {
+      return res.status(404).json({ success: false, error: 'No chat history to share' });
+    }
+
+    const sharedMessages = message_index !== undefined 
+      ? history.slice(0, parseInt(message_index) + 1) 
+      : history;
+
+    await pool.query(
+      'INSERT INTO shared_chats (share_id, user_id, messages) VALUES (?, ?, ?)',
+      [shareId, user_id, JSON.stringify(sharedMessages)]
+    );
+
+    res.json({ success: true, shareId, url: `${SITE_URL}/shared/${shareId}` });
+  } catch (err) {
+    console.error('Share error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to share chat' });
+  }
+});
+
+app.get('/api/chat/shared/:shareId', async (req, res) => {
+  try {
+    const { shareId } = req.params;
+    const [rows] = await pool.query(
+      'SELECT messages FROM shared_chats WHERE share_id = ? LIMIT 1',
+      [shareId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Shared chat not found' });
+    }
+
+    const messages = JSON.parse(rows[0].messages);
+    res.json({ success: true, messages });
+  } catch (err) {
+    console.error('Get shared error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load shared chat' });
+  }
+});
+
+// ============================================
+// PROMPT TEMPLATES ENDPOINTS
+// ============================================
+
+app.get('/api/templates', async (req, res) => {
+  try {
+    const user_id = req.query.user_id;
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const [rows] = await pool.query(
+      'SELECT id, title, prompt, created_at FROM prompt_templates WHERE user_id = ? ORDER BY created_at DESC',
+      [user_id]
+    );
+
+    res.json({ success: true, templates: rows });
+  } catch (err) {
+    console.error('Templates error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to load templates' });
+  }
+});
+
+app.post('/api/templates', async (req, res) => {
+  try {
+    const { user_id, title, prompt } = req.body;
+    if (!user_id || !title || !prompt) {
+      return res.status(400).json({ success: false, error: 'user_id, title, and prompt are required' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO prompt_templates (user_id, title, prompt) VALUES (?, ?, ?)',
+      [user_id, title.trim(), prompt.trim()]
+    );
+
+    res.json({ success: true, id: result.insertId, title, prompt });
+  } catch (err) {
+    console.error('Create template error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to save template' });
+  }
+});
+
+app.put('/api/templates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id, title, prompt } = req.body;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    const updates = [];
+    const values = [];
+
+    if (title !== undefined) { updates.push('title = ?'); values.push(title.trim()); }
+    if (prompt !== undefined) { updates.push('prompt = ?'); values.push(prompt.trim()); }
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No updates provided' });
+    }
+
+    values.push(id, user_id);
+    await pool.query(`UPDATE prompt_templates SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`, values);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Update template error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to update template' });
+  }
+});
+
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id } = req.body;
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, error: 'user_id is required' });
+    }
+
+    await pool.query('DELETE FROM prompt_templates WHERE id = ? AND user_id = ?', [id, user_id]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete template error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to delete template' });
   }
 });
 
