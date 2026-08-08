@@ -601,6 +601,28 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ============================================
+// IMAGE GENERATION ENDPOINT (Pollinations.ai)
+// ============================================
+app.post('/api/generate-image', async (req, res) => {
+  try {
+    const { prompt, width = 1024, height = 1024, model = 'flux' } = req.body;
+
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({ success: false, error: 'Please describe the image you want' });
+    }
+
+    const cleanPrompt = prompt.trim().slice(0, 1000);
+    const encodedPrompt = encodeURIComponent(cleanPrompt);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=${model}&nologo=true`;
+
+    res.json({ success: true, imageUrl, prompt: cleanPrompt });
+  } catch (err) {
+    console.error('Image generation error:', err.message);
+    res.status(500).json({ success: false, error: 'Image generation failed. Please try again.' });
+  }
+});
+
+// ============================================
 // CHAT HISTORY ENDPOINTS
 // ============================================
 

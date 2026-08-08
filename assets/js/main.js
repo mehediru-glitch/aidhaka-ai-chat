@@ -337,6 +337,43 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function isImageRequest(text) {
+  const lower = text.toLowerCase();
+  const imagePhrases = [
+    'generate image', 'create image', 'make image', 'draw image',
+    'generate a image', 'create a image', 'make a image', 'draw a image',
+    'generate an image', 'create an image', 'make an image', 'draw an image',
+    'generate picture', 'create picture', 'make picture', 'draw picture',
+    'generate a picture', 'create a picture', 'make a picture', 'draw a picture',
+    'generate photo', 'create photo', 'make photo', 'draw photo',
+    'generate a photo', 'create a photo', 'make a photo', 'draw a photo',
+    'generate illustration', 'create illustration', 'make illustration',
+    'generate art', 'create art', 'make art',
+    'draw a', 'draw me', 'draw for me',
+    'image of', 'picture of', 'photo of', 'illustration of', 'painting of', 'artwork of',
+    'text to image', 'txt2img',
+    'show me an image', 'show me a picture', 'show me an picture',
+    'i want an image', 'i want a picture', 'i want a photo',
+    'make me an image', 'make me a picture', 'make me a photo',
+    'generate for me', 'create for me', 'make for me'
+  ];
+  
+  if (imagePhrases.some(phrase => lower.includes(phrase))) {
+    return true;
+  }
+  
+  const hasImageWord = ['image', 'picture', 'photo', 'illustration', 'painting', 'artwork', 'drawing', 'sketch', 'portrait', 'landscape'].some(w => lower.includes(w));
+  const hasActionWord = ['generate', 'create', 'make', 'draw', 'render'].some(w => lower.includes(w));
+  
+  if (hasImageWord && hasActionWord) {
+    const codeWords = ['code', 'program', 'function', 'app', 'website', 'database', 'api', 'html', 'css', 'javascript', 'python', 'java', 'react', 'sql', 'bug', 'error', 'fix'];
+    const hasCodeContext = codeWords.some(w => lower.includes(w));
+    if (!hasCodeContext) return true;
+  }
+  
+  return false;
+}
+
 async function sendMessage(retryMessage = null) {
   const textarea = document.getElementById('chat-input');
   const sendBtn = document.getElementById('send-btn');
@@ -356,7 +393,37 @@ async function sendMessage(retryMessage = null) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
-    
+
+    if (isImageRequest(message)) {
+      clearTimeout(timeoutId);
+      removeSkeletonLoading();
+      
+      appendMessage('assistant', 'Generating image...', true, 'pollinations');
+      isChatLoading = false;
+      sendBtn.disabled = false;
+      
+      try {
+        const imgRes = await fetch(`${API_BASE_URL}/api/generate-image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: message, user_id: currentUserId })
+        });
+        const imgData = await imgRes.json();
+        
+        if (imgData.success && imgData.imageUrl) {
+          appendImageMessage(imgData.imageUrl, message);
+          saveToHistoryLocally(message, imgData.imageUrl, 'image');
+        } else {
+          appendMessage('assistant', imgData.error || t('chat_error'), true, null, true);
+        }
+      } catch (imgErr) {
+        appendMessage('assistant', t('chat_network_error'), true, null, true);
+      }
+      
+      textarea.focus();
+      return;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -461,6 +528,78 @@ function appendMessage(role, content, animate = true, provider = null, isError =
     messageContent.appendChild(retryBtn);
   }
   
+  messageDiv.appendChild(avatar);
+  messageDiv.appendChild(messageContent);
+  container.appendChild(messageDiv);
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendImageMessage(imageUrl, prompt, animate = true) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message message-assistant';
+  if (!animate) messageDiv.style.animation = 'none';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.textContent = 'AI';
+
+  const messageContent = document.createElement('div');
+  messageContent.className = 'message-content';
+
+  const providerBadge = document.createElement('div');
+  providerBadge.className = 'message-provider';
+  providerBadge.textContent = 'image';
+  messageContent.appendChild(providerBadge);
+
+  const imageWrapper = document.createElement('div');
+  imageWrapper.className = 'generated-image-wrapper';
+  
+  const img = document.createElement('img');
+  img.src = imageUrl;
+  img.alt = prompt || 'AI generated image';
+  img.className = 'generated-image';
+  img.loading = 'lazy';
+  
+  imageWrapper.appendChild(img);
+  messageContent.appendChild(imageWrapper);
+
+  const imageCaption = document.createElement('div');
+  imageCaption.className = 'message-text';
+  imageCaption.innerHTML = parseMarkdown(prompt || '');
+  messageContent.appendChild(imageCaption);
+
+  const imageActions = document.createElement('div');
+  imageActions.className = 'image-actions';
+  
+  const downloadBtn = document.createElement('button');
+  downloadBtn.className = 'image-btn';
+  downloadBtn.textContent = '⬇ Download';
+  downloadBtn.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = imageUrl;
+    a.download = 'aidhaka-image-' + Date.now() + '.png';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+  
+  const openBtn = document.createElement('button');
+  openBtn.className = 'image-btn';
+  openBtn.textContent = '🔗 Open';
+  openBtn.addEventListener('click', () => {
+    window.open(imageUrl, '_blank');
+  });
+  
+  imageActions.appendChild(downloadBtn);
+  imageActions.appendChild(openBtn);
+  messageContent.appendChild(imageActions);
+
   messageDiv.appendChild(avatar);
   messageDiv.appendChild(messageContent);
   container.appendChild(messageDiv);

@@ -27,8 +27,8 @@ require_once __DIR__ . '/includes/functions.php';
                     <li><a href="/chat.php" data-i18n="nav_chat">Chat</a></li>
                     <li><a href="/logout.php" class="btn btn-outline" data-i18n="nav_logout">Logout</a></li>
                 <?php else: ?>
-                    <li><a href="/login.php" data-i18n="nav_login">Login</a></li>
-                    <li><a href="/register.php" class="btn btn-primary" data-i18n="nav_register">Get Started</a></li>
+                <li><a href="/login.php" data-i18n="nav_login">Login</a></li>
+                <li><a href="/register.php" class="btn btn-primary" data-i18n="nav_register">Get Started</a></li>
                 <?php endif; ?>
             </ul>
             <div class="nav-actions">
