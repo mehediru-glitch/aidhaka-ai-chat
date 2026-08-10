@@ -7,11 +7,6 @@ const clarificationFlow = require('../services/clarification-flow');
 const security = require('../security');
 const logger = require('../logger');
 
-/**
- * GET /api/profile
- * Get current user profile with insights
- * Query: user_id (required)
- */
 router.get('/', asyncHandler(async (req, res) => {
   const { user_id } = req.query;
   
@@ -21,18 +16,16 @@ router.get('/', asyncHandler(async (req, res) => {
   
   const profile = await userProfile.getProfileWithInsights(user_id);
   
+  if (!profile) {
+    return res.status(404).json({ success: false, error: 'Profile not found' });
+  }
+  
   res.json({
     success: true,
     profile
   });
 }));
 
-/**
- * PATCH /api/profile
- * Update user preferences
- * Query: user_id (required)
- * Body: { preferences?, preferred_providers? }
- */
 router.patch('/', asyncHandler(async (req, res) => {
   const { user_id } = req.query;
   const { preferences, preferred_providers } = req.body;
@@ -50,22 +43,20 @@ router.patch('/', asyncHandler(async (req, res) => {
     throw new AidhakaError('No updates provided', 400, 'NO_UPDATES');
   }
   
+  const preferencesJson = profile.preferences ? JSON.parse(profile.preferences) : userProfile.getDefaultPreferences();
+  const preferredProvidersJson = profile.preferred_providers ? JSON.parse(profile.preferred_providers) : [];
+  
   res.json({
     success: true,
     profile: {
       userId: profile.user_id,
-      preferences: profile.preferences ? JSON.parse(profile.preferences) : {},
-      preferredProviders: profile.preferred_providers ? JSON.parse(profile.preferred_providers) : {},
+      preferences: preferencesJson,
+      preferredProviders: preferredProvidersJson,
       updatedAt: profile.last_seen_at
     }
   });
 }));
 
-/**
- * DELETE /api/profile
- * Delete all user data (GDPR compliance)
- * Query: user_id (required)
- */
 router.delete('/', asyncHandler(async (req, res) => {
   const { user_id } = req.query;
   
@@ -78,11 +69,6 @@ router.delete('/', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'All user data deleted' });
 }));
 
-/**
- * GET /api/profile/entities
- * Get known entities for user
- * Query: user_id (required), type? (optional filter)
- */
 router.get('/entities', asyncHandler(async (req, res) => {
   const { user_id, type } = req.query;
   
@@ -98,12 +84,6 @@ router.get('/entities', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * POST /api/profile/entities
- * Add known entity to user profile
- * Query: user_id (required)
- * Body: { entity, type }
- */
 router.post('/entities', asyncHandler(async (req, res) => {
   const { user_id } = req.query;
   const { entity, type } = req.body;
@@ -124,11 +104,6 @@ router.post('/entities', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * GET /api/profile/preferences
- * Get user preferences
- * Query: user_id (required)
- */
 router.get('/preferences', asyncHandler(async (req, res) => {
   const { user_id } = req.query;
   
@@ -145,11 +120,6 @@ router.get('/preferences', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * POST /api/summarize
- * Summarize a conversation
- * Body: { conversation_id }
- */
 router.post('/summarize', asyncHandler(async (req, res) => {
   const { conversation_id } = req.body;
   
@@ -160,14 +130,14 @@ router.post('/summarize', asyncHandler(async (req, res) => {
   const conversationStore = require('../services/conversation-store');
   const history = await conversationStore.getConversationHistory(conversation_id, 100);
   
-  if (!history || !history.messages) {
+  if (!history || !Array.isArray(history)) {
     throw new AidhakaError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND');
   }
   
-  const summary = summarizer.generateSummary(history.messages);
-  const title = summarizer.generateTitle(history.messages);
-  const actionItems = summarizer.extractActionItems(history.messages);
-  const decisions = summarizer.extractDecisions(history.messages);
+  const summary = summarizer.generateSummary(history);
+  const title = summarizer.generateTitle(history);
+  const actionItems = summarizer.extractActionItems(history);
+  const decisions = summarizer.extractDecisions(history);
   
   await conversationStore.updateConversation(conversation_id, {
     summary,
@@ -180,15 +150,10 @@ router.post('/summarize', asyncHandler(async (req, res) => {
     title,
     actionItems,
     decisions,
-    messageCount: history.messages.length
+    messageCount: history.length
   });
 }));
 
-/**
- * POST /api/clarify
- * Check if message needs clarification
- * Body: { message, history? }
- */
 router.post('/clarify', asyncHandler(async (req, res) => {
   const { message, history } = req.body;
   

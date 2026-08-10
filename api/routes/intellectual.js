@@ -15,11 +15,6 @@ const logger = require('../logger');
 
 const conversationStates = new Map();
 
-/**
- * GET /api/sentiment
- * Analyze sentiment and emotions of text
- * Query params: text (required)
- */
 router.get('/sentiment', asyncHandler(async (req, res) => {
   const { text } = req.query;
   
@@ -44,11 +39,6 @@ router.get('/sentiment', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * POST /api/intent
- * Classify intent of a question
- * Body: { text, history? }
- */
 router.post('/intent', asyncHandler(async (req, res) => {
   const { text, history } = req.body;
   
@@ -69,11 +59,6 @@ router.post('/intent', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * GET /api/reason
- * Show reasoning steps for a routing decision
- * Query params: q (required)
- */
 router.get('/reason', asyncHandler(async (req, res) => {
   const { q } = req.query;
   
@@ -111,12 +96,6 @@ router.get('/reason', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * POST /api/context
- * Manage conversation context
- * Body: { session_id, action, data? }
- * Actions: get, set, update, reset
- */
 router.post('/context', asyncHandler(async (req, res) => {
   const { session_id, action, data } = req.body;
   
@@ -139,14 +118,11 @@ router.post('/context', asyncHandler(async (req, res) => {
     conversationStates.set(session_id, hmm);
   }
   
-  if (action === 'get') {
-    const context = hmm.getContext();
-    return res.json({ success: true, context });
-  }
-  
-  if (action === 'update' && data && data.input) {
-    const prevState = hmm.stateHistory.length > 0 ? hmm.stateHistory[hmm.stateHistory.length - 1].state : null;
-    const newState = hmm.recordTransition(data.input, prevState);
+  if (action === 'update' && data) {
+    const prevState = hmm.getStateHistory().length > 0 
+      ? hmm.getStateHistory()[hmm.getStateHistory().length - 1].to 
+      : null;
+    const newState = hmm.recordTransition(data.input || '', prevState);
     const context = hmm.getContext();
     
     return res.json({
@@ -171,11 +147,6 @@ router.post('/context', asyncHandler(async (req, res) => {
   throw new AidhakaError(`Unknown action: ${action}`, 400, 'INVALID_ACTION');
 }));
 
-/**
- * GET /api/context
- * Get conversation context by session ID
- * Query params: session_id (required)
- */
 router.get('/context', asyncHandler(async (req, res) => {
   const { session_id } = req.query;
   
@@ -205,11 +176,6 @@ router.get('/context', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * GET /api/predict
- * Predict which provider would be best for a question
- * Query params: q (required)
- */
 router.get('/predict', asyncHandler(async (req, res) => {
   const { q } = req.query;
   
@@ -229,11 +195,6 @@ router.get('/predict', asyncHandler(async (req, res) => {
   });
 }));
 
-/**
- * POST /api/learn/feedback
- * Submit detailed learning feedback
- * Body: { question, provider, quality_score, user_satisfaction, success, response_time?, category? }
- */
 router.post('/learn/feedback', asyncHandler(async (req, res) => {
   const { question, provider, quality_score, user_satisfaction, success, response_time, category } = req.body;
   

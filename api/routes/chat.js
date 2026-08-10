@@ -29,13 +29,14 @@ router.post('/chat', asyncHandler(async (req, res) => {
 
   if (user_id) {
     try {
-      const existing = await conversationStore.getConversationBySession(req.id);
+      const sessionId = req.id;
+      const existing = await conversationStore.getConversationBySession(sessionId);
       if (existing) {
         conversation = existing;
         conversationId = existing.id;
         recentMessages = await conversationStore.getRecentMessages(existing.id, 10);
       } else {
-        conversation = await conversationStore.createConversation(user_id, req.id);
+        conversation = await conversationStore.createConversation(user_id, sessionId);
         conversationId = conversation.id;
       }
     } catch (err) {
@@ -175,7 +176,7 @@ router.post('/chat', asyncHandler(async (req, res) => {
     reply: result.reply,
     provider: usedProvider,
     conversationId,
-    turnNumber: conversation ? conversation.turn_count + 1 : null,
+    turnNumber: conversation ? (conversation.turn_count || 0) + 1 : null,
     analytics: {
       responseTime,
       qualityScore,

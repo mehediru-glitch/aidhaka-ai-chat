@@ -1,4 +1,5 @@
 const db = require('../database');
+const logger = require('../logger');
 
 async function getConversationBySession(sessionId) {
   return await db.get(
@@ -8,7 +9,7 @@ async function getConversationBySession(sessionId) {
 }
 
 async function createConversation(userId = null, sessionId = null, metadata = {}) {
-  const session = sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const session = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const result = await db.run(
     `INSERT INTO conversations (user_id, session_id, metadata) VALUES (?, ?, ?)`,
     [userId, session, JSON.stringify(metadata)]
@@ -102,6 +103,23 @@ async function updateConversationUserIds(oldUserId, newUserId) {
   );
 }
 
+async function cleanupExpiredConversations(retentionDays) {
+  const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  
+  const expiredConversations = await db.all(
+    `SELECT id FROM conversations WHERE updated_at < ?`,
+    [cutoffDate]
+  );
+
+  for (const conv of expiredConversations) {
+    await db.run(`DELETE FROM messages WHERE conversation_id = ?`, [conv.id]);
+    await db.run(`DELETE FROM topics WHERE conversation_id = ?`, [conv.id]);
+    await db.run(`DELETE FROM conversations WHERE id = ?`, [conv.id]);
+  }
+
+  return expiredConversations.length;
+}
+
 module.exports = {
   getConversationBySession,
   createConversation,
@@ -115,5 +133,6 @@ module.exports = {
   deleteConversation,
   getConversationTopics,
   searchConversations,
-  updateConversationUserIds
+  updateConversationUserIds,
+  cleanupExpiredConversations
 };

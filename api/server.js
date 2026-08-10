@@ -1,4 +1,3 @@
-require('dotenv').config({ path: '/home/diamonds/public_html/aidhaka.aiammu.com/.env' });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,8 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 const NODE_ENV = process.env.NODE_ENV || 'production';
 
 app.set('trust proxy', 1);
@@ -28,7 +29,17 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "https://image.pollinations.ai"],
-      connectSrc: ["'self'", "https://api.groq.com", "https://generativelanguage.googleapis.com", "https://api.deepseek.com", "https://openrouter.ai", "https://api.cohere.ai", "https://cloud.omniroute.online", "https://pollinations.ai"],
+      connectSrc: [
+        "'self'",
+        "https://api.groq.com",
+        "https://generativelanguage.googleapis.com",
+        "https://api.deepseek.com",
+        "https://openrouter.ai",
+        "https://api.cohere.ai",
+        "https://cloud.omniroute.online",
+        "https://pollinations.ai",
+        "https://aidhaka-ai-chat.onrender.com"
+      ],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"]
@@ -38,7 +49,7 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }));
 
-const allowedOrigins = [process.env.FRONTEND_URL, 'https://aidhaka.aiammu.com'].filter(Boolean);
+const allowedOrigins = [process.env.FRONTEND_URL, 'https://aidhaka.aiammu.com', 'https://aidhaka-ai-chat.onrender.com'].filter(Boolean);
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -62,8 +73,8 @@ app.use(morganMiddleware);
 
 const userRateLimit = new Map();
 const ipRateLimit = new Map();
-const USER_RATE_LIMIT_WINDOW = 60 * 1000;
-const USER_RATE_LIMIT_MAX = 30;
+const USER_RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '900000', 10);
+const USER_RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10);
 const IP_RATE_LIMIT_WINDOW = 60 * 1000;
 const IP_RATE_LIMIT_MAX = 100;
 
@@ -139,22 +150,32 @@ function cleanupRateLimits() {
 
 setInterval(cleanupRateLimits, 5 * 60 * 1000);
 
+function rateLimitMiddleware(req, res, next) {
+  const userId = req.body?.user_id || req.query?.user_id || 'anonymous';
+  const ip = req.clientIp || 'unknown';
+
+  if (!checkUserRateLimit(userId)) {
+    return res.status(429).json({
+      success: false,
+      error: 'Rate limit exceeded. Please try again later.',
+      retryAfter: Math.round(USER_RATE_LIMIT_WINDOW / 1000)
+    });
+  }
+
+  if (!checkIpRateLimit(ip)) {
+    return res.status(429).json({
+      success: false,
+      error: 'IP rate limit exceeded. Please try again later.',
+      retryAfter: Math.round(IP_RATE_LIMIT_WINDOW / 1000)
+    });
+  }
+
+  next();
+}
+
 function validateRequestSize(req, res, next) {
   const contentLength = parseInt(req.get('content-length') || '0', 10);
-  const maxSizes = {
-    'POST /api/chat': 1024 * 1024,
-    'POST /api/chat/stream': 1024 * 1024,
-    'POST /api/chat/share': 1024 * 1024,
-    'POST /api/templates': 1024 * 1024,
-    'POST /api/sessions': 1024 * 1024,
-    'PUT /api/sessions': 1024 * 1024,
-    'DELETE /api/sessions': 1024 * 1024,
-    'POST /api/dev-tools/snippets': 1024 * 1024,
-    'POST /api/dev-tools/history': 1024 * 1024
-  };
-
-  const routeKey = `${req.method} ${req.path}`;
-  const maxSize = maxSizes[routeKey] || 1024 * 1024;
+  const maxSize = parseInt(process.env.MAX_REQUEST_SIZE || '1048576', 10);
 
   if (contentLength > maxSize) {
     return res.status(413).json({
@@ -180,11 +201,11 @@ const conversationRoutes = require('./routes/conversations');
 const advancedRoutes = require('./routes/advanced');
 const cacheRoutes = require('./routes/cache');
 
-app.use('/api/conversations', conversationRoutes);
-app.use('/api', coreRoutes);
-app.use('/api', chatRoutes);
-app.use('/api', advancedRoutes);
-app.use('/api', cacheRoutes);
+app.use('/api/conversations', rateLimitMiddleware, validateRequestSize, conversationRoutes);
+app.use('/api', rateLimitMiddleware, validateRequestSize, coreRoutes);
+app.use('/api', rateLimitMiddleware, validateRequestSize, chatRoutes);
+app.use('/api', rateLimitMiddleware, validateRequestSize, advancedRoutes);
+app.use('/api', rateLimitMiddleware, validateRequestSize, cacheRoutes);
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -223,7 +244,10 @@ app.use((req, res) => {
 async function startServer() {
   try {
     const db = require('./database');
-    await db.init();
+    const dbReady = await db.init();
+    if (!dbReady) {
+      console.warn('Database initialization failed, running in degraded mode');
+    }
 
     const cleanupService = require('./services/cleanup-service');
     cleanupService.startCleanupScheduler({ interval: 'daily', retentionDays: 30 });

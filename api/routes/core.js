@@ -20,14 +20,22 @@ router.get('/health', asyncHandler(async (req, res) => {
     };
   }
 
+  let databaseStatus = 'disconnected';
+  try {
+    const dbHealthy = await db.isHealthy();
+    databaseStatus = dbHealthy ? 'connected' : 'disconnected';
+  } catch (err) {
+    databaseStatus = 'disconnected';
+  }
+
   res.json({
     success: true,
     message: 'Aidhaka AI API is running',
     timestamp: new Date().toISOString(),
     mode: 'unlimited',
     status: 'operational',
-    database: 'connected',
-    uptime: Date.now() - require('../server').startTime,
+    database: databaseStatus,
+    uptime: process.uptime(),
     providers: providerStatus,
     analytics: routing.getAnalytics()
   });
@@ -53,8 +61,7 @@ router.get('/routing-categories', (req, res) => {
   const categories = routing.ROUTING_CATEGORIES.map(cat => ({
     id: cat.id,
     name: cat.name,
-    primaryProvider: cat.primaryProvider,
-    fallbackProvider: cat.fallbackProvider,
+    primaryProvider: cat.provider,
     keywordCount: cat.keywords.length
   }));
 
@@ -75,7 +82,7 @@ router.get('/status', asyncHandler(async (req, res) => {
   res.json({
     success: true,
     status: 'operational',
-    uptime: Date.now() - require('../server').startTime,
+    uptime: process.uptime(),
     providers: providerStatus,
     analytics: routing.getAnalytics()
   });

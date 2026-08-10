@@ -9,12 +9,6 @@ Header set X-XSS-Protection "1; mode=block"
 # RewriteCond %{HTTPS} off
 # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# API proxy to Render via PHP
-RewriteCond %{REQUEST_URI} ^/api/
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^api/(.*)$ api/proxy.php?path=$1 [L,QSA]
-
 # Cache static assets
 <FilesMatch "\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
   ExpiresActive On

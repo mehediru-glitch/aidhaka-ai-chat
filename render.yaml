@@ -26,29 +26,69 @@ services:
         value: ${GROQ_API_KEY}
       - key: GROQ_MODEL
         value: llama-3.1-70b-versatile
+      - key: GROQ_MAX_TOKENS
+        value: '2000'
+      - key: GROQ_TEMPERATURE
+        value: '0.7'
       - key: GEMINI_API_KEY
         value: ${GEMINI_API_KEY}
+      - key: GEMINI_MODEL
+        value: gemini-1.5-pro
+      - key: GEMINI_MAX_TOKENS
+        value: '2000'
+      - key: GEMINI_TEMPERATURE
+        value: '0.7'
       - key: DEEPSEEK_API_KEY
         value: ${DEEPSEEK_API_KEY}
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: DEEPSEEK_MAX_TOKENS
+        value: '2000'
+      - key: DEEPSEEK_TEMPERATURE
+        value: '0.7'
       - key: OPENROUTER_API_KEY
         value: ${OPENROUTER_API_KEY}
+      - key: OPENROUTER_MODEL
+        value: deepseek/deepseek-chat
+      - key: OPENROUTER_MAX_TOKENS
+        value: '2000'
+      - key: OPENROUTER_TEMPERATURE
+        value: '0.7'
       - key: COHERE_API_KEY
         value: ${COHERE_API_KEY}
+      - key: COHERE_MODEL
+        value: command-r
+      - key: COHERE_MAX_TOKENS
+        value: '2000'
+      - key: COHERE_TEMPERATURE
+        value: '0.7'
+      - key: OMNIROUTE_API_KEY
+        value: ${OMNIROUTE_API_KEY}
+      - key: PROVIDER_TIMEOUT
+        value: '60000'
       - key: REASONING_DEPTH
         value: deep
       - key: ENABLE_STREAMING
-        value: true
+        value: 'true'
       - key: ENABLE_CODE_EXECUTION
-        value: true
+        value: 'true'
       - key: ENABLE_MULTIMODAL
-        value: true
+        value: 'true'
       - key: MAX_CONVERSATION_HISTORY
-        value: 50
+        value: '50'
       - key: CACHE_TTL
-        value: 300000
+        value: '300000'
       - key: ENABLE_FALLBACK
-        value: true
+        value: 'true'
       - key: SESSION_SECRET
         value: ${SESSION_SECRET}
       - key: CORS_ORIGIN
         value: https://aidhaka.aiammu.com
+      - key: MAX_REQUEST_SIZE
+        value: '1048576'
+      - key: RATE_LIMIT_WINDOW
+        value: '900000'
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: '100'
+      - key: LOG_LEVEL
+        value: info

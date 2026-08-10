@@ -6,6 +6,7 @@ const security = require('../security');
 const routing = require('../intelligent-routing');
 const db = require('../database');
 const multiLevelCache = require('../services/multi-level-cache');
+const logger = require('../logger');
 
 router.post('/compare-regimes', asyncHandler(async (req, res) => {
   const { income, deductions, regime } = req.body;
@@ -28,12 +29,12 @@ router.post('/optimize-deductions', asyncHandler(async (req, res) => {
 }));
 
 router.get('/cache/stats', asyncHandler(async (req, res) => {
-  const stats = multiLevelCache.getStats();
+  const stats = await multiLevelCache.getStats();
   res.json({ success: true, stats });
 }));
 
 router.post('/cache/clear', asyncHandler(async (req, res) => {
-  multiLevelCache.clear();
+  await multiLevelCache.clearAll();
   res.json({ success: true, message: 'Cache cleared' });
 }));
 

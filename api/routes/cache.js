@@ -4,12 +4,12 @@ const { asyncHandler, AidhakaError } = require('../errors');
 const multiLevelCache = require('../services/multi-level-cache');
 
 router.get('/cache/stats', asyncHandler(async (req, res) => {
-  const stats = multiLevelCache.getStats();
+  const stats = await multiLevelCache.getStats();
   res.json({ success: true, stats });
 }));
 
 router.post('/cache/clear', asyncHandler(async (req, res) => {
-  multiLevelCache.clear();
+  await multiLevelCache.clearAll();
   res.json({ success: true, message: 'Cache cleared' });
 }));
 

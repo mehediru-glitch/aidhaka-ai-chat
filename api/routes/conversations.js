@@ -5,6 +5,7 @@ const conversationStore = require('../services/conversation-store');
 const multiLevelCache = require('../services/multi-level-cache');
 const security = require('../security');
 const db = require('../database');
+const logger = require('../logger');
 
 router.get('/', asyncHandler(async (req, res) => {
   const user_id = req.query.user_id;
@@ -18,7 +19,7 @@ router.get('/', asyncHandler(async (req, res) => {
 
 router.post('/', asyncHandler(async (req, res) => {
   const user_id = req.body.user_id;
-  const sessionId = req.body.session_id || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const sessionId = req.body.session_id || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const metadata = req.body.metadata || {};
 
   if (!user_id) {
@@ -55,6 +56,10 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
 router.post('/:id/messages', asyncHandler(async (req, res) => {
   const conversationId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(conversationId) || conversationId <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid conversation ID' });
+  }
+
   const { role, content, metadata = {} } = req.body;
 
   if (!['user', 'assistant', 'system'].includes(role)) {
@@ -67,6 +72,10 @@ router.post('/:id/messages', asyncHandler(async (req, res) => {
 
 router.get('/:id/messages', asyncHandler(async (req, res) => {
   const conversationId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(conversationId) || conversationId <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid conversation ID' });
+  }
+
   const limit = parseInt(req.query.limit || '50', 10);
   const offset = parseInt(req.query.offset || '0', 10);
 
@@ -76,6 +85,10 @@ router.get('/:id/messages', asyncHandler(async (req, res) => {
 
 router.get('/:id/topics', asyncHandler(async (req, res) => {
   const conversationId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(conversationId) || conversationId <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid conversation ID' });
+  }
+
   const topics = await conversationStore.getConversationTopics(conversationId);
   res.json({ success: true, topics });
 }));

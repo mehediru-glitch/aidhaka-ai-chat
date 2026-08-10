@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { config } = require('./config');
 
 const LOG_DIR = path.join(__dirname, '..', 'logs');
 if (!fs.existsSync(LOG_DIR)) {

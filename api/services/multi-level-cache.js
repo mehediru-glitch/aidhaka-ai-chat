@@ -1,4 +1,5 @@
 const db = require('../database');
+const logger = require('../logger');
 
 async function getCache(key) {
   const row = await db.get(
@@ -35,10 +36,27 @@ async function clearAll() {
   await db.run(`DELETE FROM cache_entries`);
 }
 
+async function getStats() {
+  const countResult = await db.get(`SELECT COUNT(*) as count FROM cache_entries`);
+  const expiredResult = await db.get(`SELECT COUNT(*) as count FROM cache_entries WHERE expires_at < ?`, [Date.now()]);
+  
+  return {
+    totalEntries: countResult?.count || 0,
+    expiredEntries: expiredResult?.count || 0,
+    activeEntries: (countResult?.count || 0) - (expiredResult?.count || 0)
+  };
+}
+
+async function invalidate(key) {
+  await deleteCache(key);
+}
+
 module.exports = {
   getCache,
   setCache,
   deleteCache,
   clearExpired,
-  clearAll
+  clearAll,
+  getStats,
+  invalidate
 };

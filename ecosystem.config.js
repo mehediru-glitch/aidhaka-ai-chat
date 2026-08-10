@@ -1,7 +1,7 @@
 module.exports = {
   apps: [{
     name: 'aidhaka-ai',
-    script: '/home/diamonds/public_html/aidhaka.aiammu.com/start.sh',
+    script: './start.sh',
     instances: 1,
     autorestart: true,
     watch: false,

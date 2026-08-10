@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 function loadConfig() {
-  let config = {
+  const config = {
     providers: {
       groq: process.env.GROQ_API_KEY || '',
       gemini: process.env.GEMINI_API_KEY || '',
@@ -12,32 +12,32 @@ function loadConfig() {
       pollinations: 'free'
     },
     providerLimits: {
-      groq: 43200,
-      gemini: 86400,
-      deepseek: 50,
-      cohere: 100,
-      openrouter: 1000,
+      groq: parseInt(process.env.DAILY_LIMIT_GROQ || '43200', 10),
+      gemini: parseInt(process.env.DAILY_LIMIT_GEMINI || '86400', 10),
+      deepseek: parseInt(process.env.DAILY_LIMIT_DEEPSEEK || '50', 10),
+      cohere: parseInt(process.env.DAILY_LIMIT_COHERE || '100', 10),
+      openrouter: parseInt(process.env.DAILY_LIMIT_OPENROUTER || '200', 10),
       pollinations: Infinity
     },
     routing: {
-      cacheTTL: 300000,
+      cacheTTL: parseInt(process.env.CACHE_TTL || '300000', 10),
       semanticCacheSize: 1000,
-      providerTimeout: 60000
+      providerTimeout: parseInt(process.env.PROVIDER_TIMEOUT || '60000', 10)
     },
     security: {
-      rateLimitWindow: 15 * 60 * 1000,
-      rateLimitMax: 100,
-      maxRequestSize: '1mb',
-      piiDetection: true,
-      promptInjectionDetection: true
+      rateLimitWindow: parseInt(process.env.RATE_LIMIT_WINDOW || '900000', 10),
+      rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+      maxRequestSize: process.env.MAX_REQUEST_SIZE || '1048576',
+      piiDetection: process.env.ENABLE_PII_DETECTION !== 'false',
+      promptInjectionDetection: process.env.ENABLE_PROMPT_INJECTION_DETECTION !== 'false'
     },
     ai: {
       reasoningDepth: process.env.REASONING_DEPTH || 'deep',
       enableStreaming: process.env.ENABLE_STREAMING === 'true',
       enableCodeExecution: process.env.ENABLE_CODE_EXECUTION === 'true',
       enableMultimodal: process.env.ENABLE_MULTIMODAL === 'true',
-      maxConversationHistory: parseInt(process.env.MAX_CONVERSATION_HISTORY || '50'),
-      cacheTtl: parseInt(process.env.CACHE_TTL || '300000')
+      maxConversationHistory: parseInt(process.env.MAX_CONVERSATION_HISTORY || '50', 10),
+      cacheTtl: parseInt(process.env.CACHE_TTL || '300000', 10)
     }
   };
 

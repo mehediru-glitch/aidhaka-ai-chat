@@ -1,6 +1,6 @@
 const config = require('./config');
 
-const PROVIDER_TIMEOUT = parseInt(process.env.PROVIDER_TIMEOUT || '60000');
+const PROVIDER_TIMEOUT = parseInt(process.env.PROVIDER_TIMEOUT || '60000', 10);
 
 const SYSTEM_PROMPT = `You are Aidhaka AI, the world's most advanced offline-first AI assistant.
 
@@ -171,13 +171,13 @@ async function callGroq(question) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: question }
         ],
-        max_tokens: 2048,
-        temperature: 0.7,
+        max_tokens: parseInt(process.env.GROQ_MAX_TOKENS || '2048', 10),
+        temperature: parseFloat(process.env.GROQ_TEMPERATURE || '0.7'),
         top_p: 0.9
       }),
       signal: controller.signal
@@ -209,7 +209,8 @@ async function callGemini(question) {
   const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT);
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-pro';
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -253,13 +254,13 @@ async function callDeepSeek(question) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: question }
         ],
-        max_tokens: 2048,
-        temperature: 0.7
+        max_tokens: parseInt(process.env.DEEPSEEK_MAX_TOKENS || '2048', 10),
+        temperature: parseFloat(process.env.DEEPSEEK_TEMPERATURE || '0.7')
       }),
       signal: controller.signal
     });
@@ -297,13 +298,13 @@ async function callOpenRouter(question) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-chat',
+        model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: question }
         ],
-        max_tokens: 2048,
-        temperature: 0.7
+        max_tokens: parseInt(process.env.OPENROUTER_MAX_TOKENS || '2048', 10),
+        temperature: parseFloat(process.env.OPENROUTER_TEMPERATURE || '0.7')
       }),
       signal: controller.signal
     });
@@ -341,13 +342,13 @@ async function callCohere(question) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'command-r',
+        model: process.env.COHERE_MODEL || 'command-r',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: question }
         ],
-        max_tokens: 2048,
-        temperature: 0.7
+        max_tokens: parseInt(process.env.COHERE_MAX_TOKENS || '2048', 10),
+        temperature: parseFloat(process.env.COHERE_TEMPERATURE || '0.7')
       }),
       signal: controller.signal
     });
@@ -375,7 +376,8 @@ async function callPollinations(question) {
   const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT);
 
   try {
-    const response = await fetch(`https://text.pollinations.ai/${encodeURIComponent(question)}`, {
+    const encodedQuestion = encodeURIComponent(question);
+    const response = await fetch(`https://text.pollinations.ai/${encodedQuestion}`, {
       method: 'GET',
       signal: controller.signal
     });
@@ -414,7 +416,11 @@ async function tryProviderWithFallback(question, category, preferredProvider) {
   let selectedProvider = preferredProvider && providers.includes(preferredProvider) ? preferredProvider : providers[0];
 
   const errors = [];
-  for (const provider of providers) {
+  const tryProviders = selectedProvider && providers.includes(selectedProvider)
+    ? [selectedProvider, ...providers.filter(p => p !== selectedProvider)]
+    : providers;
+
+  for (const provider of tryProviders) {
     if (!isProviderAvailable(provider)) continue;
 
     try {

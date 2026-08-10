@@ -38,7 +38,6 @@ const PII_PATTERNS = [
   { type: 'phone', pattern: /(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, replacement: '[PHONE_REDACTED]' },
   { type: 'ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, replacement: '[SSN_REDACTED]' },
   { type: 'credit_card', pattern: /\b(?:\d{4}[-\s]?){3}\d{4}\b/g, replacement: '[CARD_REDACTED]' },
-  { type: 'ip_address', pattern: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, replacement: '[IP_REDACTED]' },
   { type: 'api_key', pattern: /\b(sk-|gsk_|AIza|gsk_)[a-zA-Z0-9_-]{20,}\b/g, replacement: '[API_KEY_REDACTED]' },
   { type: 'password', pattern: /(password|passwd|pwd|secret|token|api_key|apikey)\s*[:=]\s*['"]?([a-zA-Z0-9!@#$%^&*]{8,})['"]?/gi, replacement: '$1=[REDACTED]' }
 ];
@@ -111,11 +110,14 @@ function sanitizeInput(input) {
 }
 
 function validateRequestSize(req, res, next) {
-  const contentLength = parseInt(req.headers['content-length'] || 0);
-  const maxSize = parseInt(process.env.MAX_REQUEST_SIZE || 1048576);
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  const maxSize = parseInt(process.env.MAX_REQUEST_SIZE || '1048576', 10);
 
   if (contentLength > maxSize) {
-    throw new AidhakaError('Request entity too large', 413, 'PAYLOAD_TOO_LARGE');
+    return res.status(413).json({
+      success: false,
+      error: 'Request entity too large'
+    });
   }
   next();
 }
@@ -142,7 +144,7 @@ function detectSuspiciousPatterns(question) {
 
 function analyzeSentiment(text) {
   const positive = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'happy', 'love', 'best', 'perfect', 'awesome', 'beautiful', 'nice', 'fantastic', 'superb', 'outstanding'];
-  const negative = ['bad', 'terrible', 'awful', 'hate', 'worst', 'horrible', 'poor', 'disappointing', 'angry', 'sad', 'frustrated', 'annoying', 'useless', 'garbage', 'worst'];
+  const negative = ['bad', 'terrible', 'awful', 'hate', 'worst', 'horrible', 'poor', 'disappointing', 'angry', 'sad', 'frustrated', 'annoying', 'useless', 'garbage'];
 
   const words = text.toLowerCase().split(/\s+/);
   let score = 0;

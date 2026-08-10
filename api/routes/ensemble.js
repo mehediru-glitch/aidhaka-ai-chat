@@ -1,10 +1,3 @@
-/**
- * Ensemble Route - Multi-provider ensemble responses
- * 
- * Combines responses from multiple providers for complex queries
- * Returns aggregated response with quality scores per provider
- */
-
 const express = require('express');
 const router = express.Router();
 const { asyncHandler, AidhakaError } = require('../errors');
@@ -38,39 +31,49 @@ router.post('/ensemble', asyncHandler(async (req, res) => {
   }
   
   const startTime = Date.now();
+  const responses = [];
+  const responseProviders = [];
   
-  try {
-    const ensemble = await providers.ensembleProviders(selectedProviders, question, category || 'unknown');
-    
-    const scored = ensemble.responses.map((reply, idx) => ({
-      provider: ensemble.providers[idx],
-      reply,
-      quality: routing.scoreResponseQuality(question, reply)
-    }));
-    
-    const best = scored.reduce((a, b) => a.quality > b.quality ? a : b);
-    const avgQuality = scored.reduce((sum, s) => sum + s.quality, 0) / scored.length;
-    
-    const responseTime = Date.now() - startTime;
-    
-    res.json({
-      success: true,
-      reply: best.reply,
-      provider: 'ensemble',
-      bestProvider: best.provider,
-      ensemble,
-      analytics: {
-        responseTime,
-        avgQuality: Math.round(avgQuality),
-        bestQuality: best.quality,
-        providerCount: scored.length,
-        providerScores: scored.map(s => ({ provider: s.provider, quality: s.quality }))
+  for (const provider of selectedProviders) {
+    try {
+      const result = await providers.tryProviderWithFallback(question, category || 'unknown', provider);
+      if (result.success) {
+        responses.push(result.reply);
+        responseProviders.push(provider);
       }
-    });
-  } catch (err) {
-    logger.error(`[${requestId}] Ensemble failed:`, err.message);
-    throw new AidhakaError('Ensemble processing failed', 500, 'ENSEMBLE_ERROR');
+    } catch (err) {
+      logger.warn(`[${requestId}] Ensemble provider ${provider} failed:`, err.message);
+    }
   }
+  
+  if (responses.length === 0) {
+    throw new AidhakaError('All ensemble providers failed', 500, 'ENSEMBLE_ERROR');
+  }
+  
+  const scored = responses.map((reply, idx) => ({
+    provider: responseProviders[idx],
+    reply,
+    quality: routing.scoreResponseQuality(question, reply)
+  }));
+  
+  const best = scored.reduce((a, b) => a.quality > b.quality ? a : b);
+  const avgQuality = scored.reduce((sum, s) => sum + s.quality, 0) / scored.length;
+  const responseTime = Date.now() - startTime;
+  
+  res.json({
+    success: true,
+    reply: best.reply,
+    provider: 'ensemble',
+    bestProvider: best.provider,
+    responses: scored,
+    analytics: {
+      responseTime,
+      avgQuality: Math.round(avgQuality),
+      bestQuality: best.quality,
+      providerCount: scored.length,
+      providerScores: scored.map(s => ({ provider: s.provider, quality: s.quality }))
+    }
+  });
 }));
 
 module.exports = router;

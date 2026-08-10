@@ -64,7 +64,7 @@
   <script src="assets/js/main.js"></script>
   <script>
     (function() {
-      const API_BASE = '';
+      const RENDER_API_URL = 'https://aidhaka-ai-chat.onrender.com/api/chat';
       const chatMessages = document.getElementById('chatMessages');
       const chatForm = document.getElementById('chatForm');
       const messageInput = document.getElementById('messageInput');
@@ -75,7 +75,7 @@
 
       let conversationHistory = [];
       let conversationId = null;
-      let userId = 'user_' + Math.random().toString(36).substr(2, 9);
+      let userId = 'user_' + Math.random().toString(36).substring(2, 9);
       let isProcessing = false;
 
       function appendMessage(role, content, extra = {}) {
@@ -144,7 +144,7 @@
         conversationHistory.push({ question, answer: '' });
 
         try {
-          const response = await fetch('https://aidhaka-ai-chat.onrender.com/api/chat', {
+          const response = await fetch(RENDER_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
