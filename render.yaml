@@ -22,3 +22,33 @@ services:
         value: diamonds_aidhaka
       - key: FRONTEND_URL
         value: https://aidhaka.aiammu.com
+      - key: GROQ_API_KEY
+        value: ${GROQ_API_KEY}
+      - key: GROQ_MODEL
+        value: llama-3.1-70b-versatile
+      - key: GEMINI_API_KEY
+        value: ${GEMINI_API_KEY}
+      - key: DEEPSEEK_API_KEY
+        value: ${DEEPSEEK_API_KEY}
+      - key: OPENROUTER_API_KEY
+        value: ${OPENROUTER_API_KEY}
+      - key: COHERE_API_KEY
+        value: ${COHERE_API_KEY}
+      - key: REASONING_DEPTH
+        value: deep
+      - key: ENABLE_STREAMING
+        value: true
+      - key: ENABLE_CODE_EXECUTION
+        value: true
+      - key: ENABLE_MULTIMODAL
+        value: true
+      - key: MAX_CONVERSATION_HISTORY
+        value: 50
+      - key: CACHE_TTL
+        value: 300000
+      - key: ENABLE_FALLBACK
+        value: true
+      - key: SESSION_SECRET
+        value: ${SESSION_SECRET}
+      - key: CORS_ORIGIN
+        value: https://aidhaka.aiammu.com
