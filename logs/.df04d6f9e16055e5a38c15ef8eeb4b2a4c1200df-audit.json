@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "/home/diamonds/public_html/aidhaka.aiammu.com/logs/.df04d6f9e16055e5a38c15ef8eeb4b2a4c1200df-audit.json",
+    "files": [
+        {
+            "date": 1786340393889,
+            "name": "/home/diamonds/public_html/aidhaka.aiammu.com/logs/aidhaka-error-2026-08-10.log",
+            "hash": "4505cf25be85ea5708d116a0ea83a0904c0e13a6190b3be64e4c9959fb7e1c04"
+        }
+    ],
+    "hashType": "sha256"
+}

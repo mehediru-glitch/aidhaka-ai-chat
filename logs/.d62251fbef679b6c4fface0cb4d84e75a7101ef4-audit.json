@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Users\\mehed\\Downloads\\kilocode\\aidhaka-advanced-final\\logs\\.d62251fbef679b6c4fface0cb4d84e75a7101ef4-audit.json",
+    "files": [
+        {
+            "date": 1786265784384,
+            "name": "C:\\Users\\mehed\\Downloads\\kilocode\\aidhaka-advanced-final\\logs\\aidhaka-2026-08-09.log",
+            "hash": "59b4b4b0523409095c53ca0192227c98a5ce7c50dbd49a05f976f0ad77a884d4"
+        }
+    ],
+    "hashType": "sha256"
+}

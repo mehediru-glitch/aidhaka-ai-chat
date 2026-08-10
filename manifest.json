@@ -1,0 +1,10 @@
+{
+  "name": "Aidhaka AI",
+  "short_name": "Aidhaka",
+  "description": "Your Intelligent AI Companion",
+  "start_url": "/chat.php",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#6C63FF",
+  "orientation": "portrait-primary"
+}
