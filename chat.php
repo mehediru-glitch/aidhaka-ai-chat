@@ -144,7 +144,7 @@
         conversationHistory.push({ question, answer: '' });
 
         try {
-          const response = await fetch(`${API_BASE}/api/chat`, {
+          const response = await fetch('https://aidhaka-ai-chat.onrender.com/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
