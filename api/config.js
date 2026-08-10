@@ -7,7 +7,7 @@ function loadConfig() {
       groq: process.env.GROQ_API_KEY || '',
       gemini: process.env.GEMINI_API_KEY || '',
       deepseek: process.env.DEEPSEEK_API_KEY || '',
-      openrouter: process.env.OPENROUTER_API_KEY || '',
+      openrouter: process.env.OPENROUTER_API_KEY || process.env.OMNIROUTE_API_KEY || '',
       cohere: process.env.COHERE_API_KEY || '',
       pollinations: 'free'
     },
