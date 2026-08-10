@@ -13,7 +13,7 @@ Header set X-XSS-Protection "1; mode=block"
 RewriteCond %{REQUEST_URI} ^/api/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
+RewriteRule ^api/(.*)$ https://aidhaka-ai-chat.onrender.com/api/$1 [P,L]
 
 # Cache static assets
 <FilesMatch "\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
