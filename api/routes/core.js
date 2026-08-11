@@ -20,6 +20,21 @@ router.get('/health', asyncHandler(async (req, res) => {
     };
   }
 
+  let providerTest = null;
+  try {
+    const start = Date.now();
+    const reply = await providers.tryProviderWithFallback('Hello', 'default', 'pollinations');
+    providerTest = {
+      success: reply.success,
+      provider: reply.provider,
+      error: reply.error || null,
+      replyPreview: reply.reply ? reply.reply.substring(0, 100) : null,
+      responseTime: Date.now() - start
+    };
+  } catch (e) {
+    providerTest = { error: e.message };
+  }
+
   let databaseStatus = 'disconnected';
   try {
     const dbHealthy = await db.isHealthy();
@@ -37,6 +52,7 @@ router.get('/health', asyncHandler(async (req, res) => {
     database: databaseStatus,
     uptime: process.uptime(),
     providers: providerStatus,
+    providerTest,
     analytics: routing.getAnalytics()
   });
 }));
