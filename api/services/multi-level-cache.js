@@ -54,6 +54,8 @@ async function invalidate(key) {
 module.exports = {
   getCache,
   setCache,
+  get: getCache,
+  set: setCache,
   deleteCache,
   clearExpired,
   clearAll,
