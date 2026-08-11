@@ -177,8 +177,7 @@ async function callGroq(question) {
           { role: 'user', content: question }
         ],
         max_tokens: parseInt(process.env.GROQ_MAX_TOKENS || '2048', 10),
-        temperature: parseFloat(process.env.GROQ_TEMPERATURE || '0.7'),
-        top_p: 0.9
+        temperature: parseFloat(process.env.GROQ_TEMPERATURE || '0.7')
       }),
       signal: controller.signal
     });
@@ -189,6 +188,17 @@ async function callGroq(question) {
       const error = await response.text();
       throw new Error(`Groq API error: ${response.status} - ${error}`);
     }
+
+    const data = await response.json();
+    const reply = data.choices?.[0]?.message?.content;
+    if (!reply) throw new Error('Empty response from Groq');
+
+    return reply;
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
+}
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content;
@@ -377,21 +387,51 @@ async function callPollinations(question) {
 
   try {
     const encodedQuestion = encodeURIComponent(question);
-    const response = await fetch(`https://text.pollinations.ai/${encodedQuestion}`, {
-      method: 'GET',
+    
+    try {
+      const getResponse = await fetch(`https://text.pollinations.ai/${encodedQuestion}`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+
+      if (getResponse.ok) {
+        const text = await getResponse.text();
+        if (text) {
+          clearTimeout(timeout);
+          return text;
+        }
+      }
+    } catch (getErr) {
+      console.warn('Pollinations GET failed, trying POST:', getErr.message);
+    }
+
+    const postResponse = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'openai',
+        messages: [
+          { role: 'system', content: 'You are a helpful AI assistant.' },
+          { role: 'user', content: question }
+        ]
+      }),
       signal: controller.signal
     });
 
     clearTimeout(timeout);
 
-    if (!response.ok) {
-      throw new Error(`Pollinations API error: ${response.status}`);
+    if (!postResponse.ok) {
+      const errorText = await postResponse.text();
+      throw new Error(`Pollinations API error: ${postResponse.status} - ${errorText}`);
     }
 
-    const text = await response.text();
-    if (!text) throw new Error('Empty response from Pollinations');
+    const data = await postResponse.json();
+    const reply = data.choices?.[0]?.message?.content || data.reply || data.text || data.message;
+    if (!reply) throw new Error('Empty response from Pollinations');
 
-    return text;
+    return reply;
   } catch (error) {
     clearTimeout(timeout);
     throw error;
@@ -408,40 +448,44 @@ const providerCallers = {
 };
 
 async function tryProviderWithFallback(question, category, preferredProvider) {
-  const providers = getAvailableProviders();
-  if (providers.length === 0) {
+  const availableProviders = getAvailableProviders();
+  if (availableProviders.length === 0) {
     return { success: false, error: 'No providers available', provider: 'none' };
   }
 
-  let selectedProvider = preferredProvider && providers.includes(preferredProvider) ? preferredProvider : providers[0];
+  let selectedProvider = preferredProvider && availableProviders.includes(preferredProvider) ? preferredProvider : availableProviders[0];
 
   const errors = [];
-  const tryProviders = selectedProvider && providers.includes(selectedProvider)
-    ? [selectedProvider, ...providers.filter(p => p !== selectedProvider)]
-    : providers;
+  const tryProviders = selectedProvider && availableProviders.includes(selectedProvider)
+    ? [selectedProvider, ...availableProviders.filter(p => p !== selectedProvider)]
+    : availableProviders;
 
   for (const provider of tryProviders) {
     if (!isProviderAvailable(provider)) continue;
 
-    try {
-      const startTime = Date.now();
-      const reply = await providerCallers[provider](question);
-      const responseTime = Date.now() - startTime;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const startTime = Date.now();
+        const reply = await providerCallers[provider](question);
+        const responseTime = Date.now() - startTime;
 
-      recordProviderSuccess(provider, responseTime);
-      incrementProviderUsage(provider);
+        recordProviderSuccess(provider, responseTime);
+        incrementProviderUsage(provider);
 
-      return { success: true, reply, provider };
-    } catch (error) {
-      recordProviderFailure(provider, error.message);
-      errors.push({ provider, error: error.message });
-      continue;
+        return { success: true, reply, provider };
+      } catch (error) {
+        recordProviderFailure(provider, error.message);
+        errors.push({ provider, attempt, error: error.message });
+        if (attempt === 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
   }
 
   return {
     success: false,
-    error: `All providers failed: ${errors.map(e => `${e.provider}: ${e.error}`).join(', ')}`,
+    error: `All providers failed: ${errors.slice(-3).map(e => `${e.provider}: ${e.error}`).join(', ')}`,
     provider: 'none'
   };
 }
