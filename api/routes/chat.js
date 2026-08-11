@@ -105,7 +105,7 @@ router.post('/chat', asyncHandler(async (req, res) => {
       logger.info(`[${requestId}] Forced provider ${provider} succeeded via ${usedProvider} (quality: ${qualityScore}%)`);
     } catch (err) {
       logger.error(`[${requestId}] Forced provider ${provider} failed:`, err.message);
-      result = routing.getOfflineResponse(sanitizedQuestion, history || []);
+      result = { success: true, reply: routing.getOfflineResponse(sanitizedQuestion, history || []) };
       usedProvider = 'offline';
     }
   } else {
@@ -136,7 +136,7 @@ router.post('/chat', asyncHandler(async (req, res) => {
       logger.info(`[${requestId}] Smart routing: ${usedProvider} (category: ${category}, quality: ${qualityScore}%)`);
     } catch (err) {
       logger.error(`[${requestId}] Online AI failed:`, err.message);
-      result = routing.getOfflineResponse(sanitizedQuestion, history || []);
+      result = { success: true, reply: routing.getOfflineResponse(sanitizedQuestion, history || []) };
       usedProvider = 'offline';
     }
   }
