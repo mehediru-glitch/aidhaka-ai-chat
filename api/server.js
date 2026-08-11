@@ -241,6 +241,16 @@ app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Endpoint not found' });
 });
 
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+  console.error(`[${req.id}] Error:`, err.message);
+  res.status(statusCode).json({
+    success: false,
+    error: err.message || 'Internal server error',
+    code: err.code || 'INTERNAL_ERROR'
+  });
+});
+
 async function startServer() {
   try {
     const db = require('./database');
