@@ -200,17 +200,6 @@ async function callGroq(question) {
   }
 }
 
-    const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content;
-    if (!reply) throw new Error('Empty response from Groq');
-
-    return reply;
-  } catch (error) {
-    clearTimeout(timeout);
-    throw error;
-  }
-}
-
 async function callGemini(question) {
   const apiKey = config.providers.gemini;
   if (!apiKey) throw new Error('Gemini API key not configured');
