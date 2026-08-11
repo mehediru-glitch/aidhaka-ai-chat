@@ -88,4 +88,40 @@ router.get('/status', asyncHandler(async (req, res) => {
   });
 }));
 
+router.get('/debug', asyncHandler(async (req, res) => {
+  const config = require('../config');
+  const debug = {
+    env: {
+      GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+      DEEPSEEK_API_KEY: !!process.env.DEEPSEEK_API_KEY,
+      OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
+      OMNIROUTE_API_KEY: !!process.env.OMNIROUTE_API_KEY,
+      COHERE_API_KEY: !!process.env.COHERE_API_KEY,
+      NODE_ENV: process.env.NODE_ENV,
+      PORT: process.env.PORT
+    },
+    configProviders: config.providers ? Object.keys(config.providers).map(k => ({ key: k, hasValue: !!config.providers[k] })) : 'config is not an object',
+    providerErrors: {}
+  };
+
+  for (const provider of ['pollinations']) {
+    try {
+      const start = Date.now();
+      const reply = await providers.tryProviderWithFallback('Hello', 'default', provider);
+      debug.providerErrors[provider] = {
+        success: reply.success,
+        provider: reply.provider,
+        error: reply.error || null,
+        replyPreview: reply.reply ? reply.reply.substring(0, 100) : null,
+        responseTime: Date.now() - start
+      };
+    } catch (e) {
+      debug.providerErrors[provider] = { error: e.message };
+    }
+  }
+
+  res.json(debug);
+}));
+
 module.exports = router;
