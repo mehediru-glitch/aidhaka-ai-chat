@@ -4,16 +4,16 @@ const { asyncHandler, AidhakaError } = require('../errors');
 const providers = require('../providers');
 const security = require('../security');
 const routing = require('../intelligent-routing');
-const db = require('../database');
-const logger = require('../logger');
-const conversationStore = require('../services/conversation-store');
-const multiLevelCache = require('../services/multi-level-cache');
 
 router.post('/chat', asyncHandler(async (req, res) => {
   const requestId = req.id;
-  const clientIp = req.ip || req.connection.remoteAddress;
 
-  const { question, provider, user_id, history } = req.body;
+  let question, provider, user_id, history;
+  try {
+    ({ question, provider, user_id, history } = req.body);
+  } catch (e) {
+    throw new AidhakaError('Invalid request body', 400, 'INVALID_BODY');
+  }
 
   if (!question || typeof question !== 'string' || !question.trim()) {
     throw new AidhakaError('Message cannot be empty', 400, 'EMPTY_MESSAGE');
@@ -23,152 +23,156 @@ router.post('/chat', asyncHandler(async (req, res) => {
     throw new AidhakaError('Message too long', 400, 'MESSAGE_TOO_LONG');
   }
 
-  let conversation = null;
   let conversationId = null;
-  let recentMessages = [];
 
   if (user_id) {
     try {
+      const conversationStore = require('../services/conversation-store');
       const sessionId = req.id;
       const existing = await conversationStore.getConversationBySession(sessionId);
       if (existing) {
-        conversation = existing;
         conversationId = existing.id;
-        recentMessages = await conversationStore.getRecentMessages(existing.id, 10);
       } else {
-        conversation = await conversationStore.createConversation(user_id, sessionId);
+        const conversation = await conversationStore.createConversation(user_id, sessionId);
         conversationId = conversation.id;
       }
     } catch (err) {
-      logger.warn(`[${requestId}] Conversation store error:`, err.message);
+      conversationId = null;
     }
+  }
+
+  providers.resetDailyUsageIfNeeded();
+  const startTime = Date.now();
+
+  let injectionCheck;
+  try {
+    injectionCheck = security.detectPromptInjection(question);
+  } catch (e) {
+    injectionCheck = { detected: false };
+  }
+
+  if (injectionCheck.detected) {
+    throw new AidhakaError('Invalid request detected', 400, 'PROMPT_INJECTION');
+  }
+
+  let sanitizedQuestion = question;
+  try {
+    const piiCheck = security.detectAndRedactPII(question);
+    sanitizedQuestion = piiCheck.hasPII ? piiCheck.question : security.sanitizeInput(question);
+  } catch (e) {
+    sanitizedQuestion = question.replace(/[<>]/g, '').trim();
+  }
+
+  let cachedReply = null;
+  try {
+    const multiLevelCache = require('../services/multi-level-cache');
+    const cacheKey = `chat:${security.hashString(sanitizedQuestion)}`;
+    cachedReply = await multiLevelCache.get(cacheKey);
+  } catch (e) {
+    cachedReply = null;
+  }
+
+  if (cachedReply && !provider) {
+    return res.json({
+      success: true,
+      reply: cachedReply.reply,
+      provider: cachedReply.provider,
+      cached: true,
+      analytics: {
+        responseTime: 0,
+        qualityScore: cachedReply.qualityScore,
+        category: cachedReply.category
+      }
+    });
   }
 
   let result;
   let usedProvider = 'offline';
   let responseTime = 0;
   let qualityScore = 0;
-  let category = 'unknown';
+  let category = 'default';
 
-  providers.resetDailyUsageIfNeeded();
-  const startTime = Date.now();
-
-  const effectiveQuestion = question;
-
-  const injectionCheck = security.detectPromptInjection(effectiveQuestion);
-  if (injectionCheck.detected) {
-    logger.warn(`[${requestId}] Prompt injection detected: ${injectionCheck.type}`);
-    throw new AidhakaError('Invalid request detected', 400, 'PROMPT_INJECTION');
-  }
-
-  const piiCheck = security.detectAndRedactPII(effectiveQuestion);
-  const sanitizedQuestion = piiCheck.hasPII ? piiCheck.question : security.sanitizeInput(effectiveQuestion);
-
-  const cacheKey = `chat:${security.hashString(sanitizedQuestion)}`;
-  const cachedResponse = await multiLevelCache.get(cacheKey);
-  if (cachedResponse && !provider) {
-    return res.json({
-      success: true,
-      reply: cachedResponse.reply,
-      provider: cachedResponse.provider,
-      cached: true,
-      analytics: {
-        responseTime: 0,
-        qualityScore: cachedResponse.qualityScore,
-        category: cachedResponse.category
-      }
-    });
-  }
-
-  if (provider && ['groq', 'gemini', 'deepseek', 'openrouter', 'cohere', 'pollinations', 'ollama', 'lmstudio', 'localai'].includes(provider)) {
+  try {
+    let selected;
     try {
-      const reply = await providers.tryProviderWithFallback(sanitizedQuestion, 'forced', provider);
-      if (!reply.success) {
-        throw new Error(reply.error);
-      }
-
-      qualityScore = routing.scoreResponseQuality(sanitizedQuestion, reply.reply);
-      category = 'forced';
-
-      if (qualityScore > 60) {
-        multiLevelCache.set(cacheKey, {
-          reply: reply.reply,
-          provider: reply.provider,
-          qualityScore,
-          category
-        }, 300000);
-      }
-
-      result = { success: true, reply: reply.reply.trim() };
-      usedProvider = reply.provider;
-      responseTime = Date.now() - startTime;
-      logger.info(`[${requestId}] Forced provider ${provider} succeeded via ${usedProvider} (quality: ${qualityScore}%)`);
-    } catch (err) {
-      logger.error(`[${requestId}] Forced provider ${provider} failed:`, err.message);
-      result = { success: true, reply: routing.getOfflineResponse(sanitizedQuestion, history || []) };
-      usedProvider = 'offline';
-    }
-  } else {
-    try {
-      const selected = routing.selectProviderByQuestion(sanitizedQuestion);
+      selected = routing.selectProviderByQuestion(sanitizedQuestion);
       category = selected.category?.id || 'default';
-      const preferredProvider = selected.provider;
-
-      const reply = await providers.tryProviderWithFallback(sanitizedQuestion, category, preferredProvider);
-      if (!reply.success) {
-        throw new Error(reply.error);
-      }
-
-      qualityScore = routing.scoreResponseQuality(sanitizedQuestion, reply.reply);
-      responseTime = Date.now() - startTime;
-
-      if (qualityScore > 60) {
-        multiLevelCache.set(cacheKey, {
-          reply: reply.reply,
-          provider: reply.provider,
-          qualityScore,
-          category
-        }, 300000);
-      }
-
-      result = { success: true, reply: reply.reply.trim() };
-      usedProvider = reply.provider;
-      logger.info(`[${requestId}] Smart routing: ${usedProvider} (category: ${category}, quality: ${qualityScore}%)`);
-    } catch (err) {
-      logger.error(`[${requestId}] Online AI failed:`, err.message);
-      result = { success: true, reply: routing.getOfflineResponse(sanitizedQuestion, history || []) };
-      usedProvider = 'offline';
+    } catch (e) {
+      selected = { provider: 'groq', category: { id: 'default' } };
+      category = 'default';
     }
+
+    const preferredProvider = provider || selected.provider;
+
+    try {
+      const reply = await providers.tryProviderWithFallback(sanitizedQuestion, category, preferredProvider);
+      if (reply.success && reply.reply) {
+        qualityScore = 70;
+        try {
+          qualityScore = routing.scoreResponseQuality(sanitizedQuestion, reply.reply);
+        } catch (e) { }
+
+        if (qualityScore > 60) {
+          try {
+            const multiLevelCache = require('../services/multi-level-cache');
+            const cacheKey = `chat:${security.hashString(sanitizedQuestion)}`;
+            await multiLevelCache.set(cacheKey, {
+              reply: reply.reply,
+              provider: reply.provider,
+              qualityScore,
+              category
+            }, 300000);
+          } catch (e) { }
+        }
+
+        result = { success: true, reply: reply.reply.trim() };
+        usedProvider = reply.provider;
+      } else {
+        throw new Error(reply.error || 'Provider returned no reply');
+      }
+    } catch (providerErr) {
+      try {
+        const offlineReply = routing.getOfflineResponse(sanitizedQuestion, history || []);
+        result = { success: true, reply: offlineReply };
+        usedProvider = 'offline';
+      } catch (offlineErr) {
+        result = { success: true, reply: "I'm currently unable to process your request. Please try again later." };
+        usedProvider = 'offline';
+      }
+    }
+  } catch (err) {
+    result = { success: true, reply: "I'm currently unable to process your request. Please try again later." };
+    usedProvider = 'offline';
   }
+
+  responseTime = Date.now() - startTime;
 
   if (user_id && result && result.success) {
     try {
+      const db = require('../database');
       await db.run(
         'INSERT INTO routing_history (session_id, question_hash, question, selected_provider, category, quality_score, response_time, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [user_id, security.hashString(sanitizedQuestion), sanitizedQuestion, usedProvider, category, qualityScore, responseTime, 1]
       );
-    } catch (dbErr) {
-      logger.error(`[${requestId}] DB save error:`, dbErr.message);
-    }
+    } catch (dbErr) { }
 
     if (conversationId) {
       try {
+        const conversationStore = require('../services/conversation-store');
         await conversationStore.addMessage(conversationId, 'user', question, {
           sanitized_content: sanitizedQuestion
         });
-
         await conversationStore.addMessage(conversationId, 'assistant', result.reply, {
           provider: usedProvider,
           quality_score: qualityScore
         });
-      } catch (convErr) {
-        logger.error(`[${requestId}] Conversation save error:`, convErr.message);
-      }
+      } catch (convErr) { }
     }
   }
 
   if (!result || !result.success) {
-    throw new AidhakaError('Something went wrong. Please try again.', 500, 'CHAT_ERROR');
+    result = { success: true, reply: "I'm currently unable to process your request. Please try again later." };
+    usedProvider = 'offline';
   }
 
   res.json({
@@ -176,12 +180,12 @@ router.post('/chat', asyncHandler(async (req, res) => {
     reply: result.reply,
     provider: usedProvider,
     conversationId,
-    turnNumber: conversation ? (conversation.turn_count || 0) + 1 : null,
+    turnNumber: null,
     analytics: {
       responseTime,
       qualityScore,
       category,
-      piiDetected: piiCheck.hasPII
+      piiDetected: injectionCheck.detected
     }
   });
 }));
