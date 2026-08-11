@@ -207,6 +207,44 @@ app.use('/api', rateLimitMiddleware, validateRequestSize, chatRoutes);
 app.use('/api', rateLimitMiddleware, validateRequestSize, advancedRoutes);
 app.use('/api', rateLimitMiddleware, validateRequestSize, cacheRoutes);
 
+app.get('/api/debug', async (req, res) => {
+  const config = require('./config');
+  const providers = require('./providers');
+  const debug = {
+    env: {
+      GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+      DEEPSEEK_API_KEY: !!process.env.DEEPSEEK_API_KEY,
+      OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
+      OMNIROUTE_API_KEY: !!process.env.OMNIROUTE_API_KEY,
+      COHERE_API_KEY: !!process.env.COHERE_API_KEY,
+      NODE_ENV: process.env.NODE_ENV,
+      PORT: process.env.PORT
+    },
+    configType: typeof config,
+    configProviders: config && config.providers ? Object.keys(config.providers).map(k => ({ key: k, hasValue: !!config.providers[k] })) : 'config missing providers',
+    providerErrors: {}
+  };
+
+  for (const provider of ['pollinations', 'groq', 'gemini', 'deepseek', 'openrouter', 'cohere']) {
+    try {
+      const start = Date.now();
+      const reply = await providers.tryProviderWithFallback('Hello', 'default', provider);
+      debug.providerErrors[provider] = {
+        success: reply.success,
+        provider: reply.provider,
+        error: reply.error || null,
+        replyPreview: reply.reply ? reply.reply.substring(0, 100) : null,
+        responseTime: Date.now() - start
+      };
+    } catch (e) {
+      debug.providerErrors[provider] = { error: e.message };
+    }
+  }
+
+  res.json(debug);
+});
+
 app.get('/api/health', async (req, res) => {
   try {
     const db = require('./database');
